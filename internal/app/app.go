@@ -84,7 +84,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
-		headerHeight := 1
+		headerHeight := 2 // 1 line for header text + 1 line for bottom border
 		sidebarW, contentW, contentH := CalculateLayout(msg.Width, msg.Height, headerHeight)
 
 		m.header.SetSize(msg.Width, headerHeight)
