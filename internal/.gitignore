@@ -1,0 +1,20 @@
+# Compiled binary
+/bin/
+/tsuzuri
+tsuzuri.exe
+
+# Go test/build artifacts
+*.test
+*.out
+coverage.*
+
+# Local user data — keep real notes/credentials out of git
+*.log
+/data/
+pages.json
+
+# OS / editor junk
+.DS_Store
+.idea/
+.vscode/
+*.swp
