@@ -1,0 +1,17 @@
+# Binary outputs
+bin/
+tsuzuri
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Runtime log files
+tsuzuri.log
+*.log
+
+# IDE & OS files
+.DS_Store
+.vscode/
+.idea/
