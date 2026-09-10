@@ -1,4 +1,4 @@
-# Tsuzuri (綴り)
+# Tsuzuri (綴)
 
 A terminal-based notebook and markdown workspace application built with **Go**, **Bubble Tea**, and **Lip Gloss**.
 
