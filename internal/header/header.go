@@ -4,28 +4,30 @@ package header
 import (
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 	"tsuzuri/internal/core"
 	"tsuzuri/internal/theme"
+
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
 
 // Model represents the Header component state.
 type Model struct {
-	theme        theme.Theme
-	page         core.Page
-	vimModeStr   string
-	focusSidebar bool
-	width        int
-	height       int
-	rightText    string
+	theme      theme.Theme
+	page       core.Page
+	vimModeStr string
+	paneFocus  string
+	width      int
+	height     int
+	rightText  string
 }
 
 // New constructs a Header Model with default settings.
 func New(th theme.Theme) Model {
 	return Model{
 		theme:     th,
-		rightText: "[Tab] Switch Pane  [Ctrl+N] New",
+		paneFocus: "EDITOR",
+		rightText: "Tab Switch Pane  •  Ctrl+N New  •  Ctrl+D Home",
 	}
 }
 
@@ -46,10 +48,20 @@ func (m *Model) SetPage(p core.Page) {
 	m.page = p
 }
 
-// SetMode sets the active Vim mode badge and focus status.
+// SetPaneFocus updates the active focus pane ("SIDEBAR", "EDITOR", "PREVIEW") and vim mode.
+func (m *Model) SetPaneFocus(pane string, vimModeStr string) {
+	m.paneFocus = pane
+	m.vimModeStr = vimModeStr
+}
+
+// SetMode sets the active Vim mode badge and focus status for backward compatibility.
 func (m *Model) SetMode(modeStr string, focusSidebar bool) {
+	if focusSidebar {
+		m.paneFocus = "SIDEBAR"
+	} else {
+		m.paneFocus = "EDITOR"
+	}
 	m.vimModeStr = modeStr
-	m.focusSidebar = focusSidebar
 }
 
 // Update processes Bubble Tea messages.
@@ -66,9 +78,12 @@ func (m Model) View() string {
 	modeStyle := lipgloss.NewStyle().Bold(true).Padding(0, 1)
 
 	var modeTag string
-	if m.focusSidebar {
+	switch m.paneFocus {
+	case "SIDEBAR":
 		modeTag = modeStyle.Background(m.theme.SidebarBg).Foreground(m.theme.DarkFg).Render("SIDEBAR")
-	} else {
+	case "PREVIEW":
+		modeTag = modeStyle.Background(m.theme.CommandBg).Foreground(m.theme.DarkFg).Render("PREVIEW")
+	default:
 		switch m.vimModeStr {
 		case "INSERT":
 			modeTag = modeStyle.Background(m.theme.InsertBg).Foreground(m.theme.DarkFg).Render("-- INSERT --")

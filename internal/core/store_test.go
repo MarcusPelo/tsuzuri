@@ -47,6 +47,25 @@ func TestStoreCreate(t *testing.T) {
 	}
 }
 
+func TestStoreCreateChild(t *testing.T) {
+	store := core.NewStore()
+	child, err := store.CreateChild("page-1", "Nested Tasks")
+	if err != nil {
+		t.Fatalf("unexpected error creating child page: %v", err)
+	}
+	if child.ParentID != "page-1" {
+		t.Errorf("expected parent ID 'page-1', got %q", child.ParentID)
+	}
+	if child.Title != "Nested Tasks" {
+		t.Errorf("expected title 'Nested Tasks', got %q", child.Title)
+	}
+
+	_, err = store.CreateChild("non-existent", "Child")
+	if err != core.ErrPageNotFound {
+		t.Errorf("expected ErrPageNotFound for non-existent parent, got %v", err)
+	}
+}
+
 func TestStoreSaveLoadRoundTrip(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -135,5 +154,39 @@ func TestStoreEdgeCases(t *testing.T) {
 	err = store.Delete("invalid-id")
 	if err != core.ErrPageNotFound {
 		t.Errorf("expected ErrPageNotFound on delete, got %v", err)
+	}
+}
+
+func TestStoreSeedHierarchy(t *testing.T) {
+	store := core.NewStore()
+	store.SeedHierarchy()
+
+	pages := store.List()
+	// Should have initial page + 5 hierarchy pages = 6 pages
+	if len(pages) != 6 {
+		t.Fatalf("expected 6 pages after SeedHierarchy, got %d", len(pages))
+	}
+
+	pageMap := make(map[string]core.Page)
+	for _, p := range pages {
+		pageMap[p.ID] = p
+	}
+
+	// Verify child 1's parent is Parent 1
+	c1, ok := pageMap["page-child-1"]
+	if !ok || c1.ParentID != "page-parent-1" {
+		t.Errorf("expected page-child-1 to have ParentID page-parent-1, got %v", c1)
+	}
+
+	// Verify grandchild's parent is child 1
+	gc1, ok := pageMap["page-child-1-child"]
+	if !ok || gc1.ParentID != "page-child-1" {
+		t.Errorf("expected page-child-1-child to have ParentID page-child-1, got %v", gc1)
+	}
+
+	// Verify child 2's parent is Parent 2
+	c2, ok := pageMap["page-child-2"]
+	if !ok || c2.ParentID != "page-parent-2" {
+		t.Errorf("expected page-child-2 to have ParentID page-parent-2, got %v", c2)
 	}
 }

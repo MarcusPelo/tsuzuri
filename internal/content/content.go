@@ -2,17 +2,21 @@
 package content
 
 import (
+	"strings"
+
+	"tsuzuri/internal/core"
+	"tsuzuri/internal/theme"
+
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"tsuzuri/internal/core"
-	"tsuzuri/internal/theme"
 )
 
 // Model represents the Content component state.
 type Model struct {
 	theme         theme.Theme
+	pages         []core.Page
 	page          core.Page
 	textarea      textarea.Model
 	cmdInput      textinput.Model
@@ -59,11 +63,11 @@ func (m *Model) SetSize(w, h int) {
 	m.width = w
 	m.height = h
 
-	taWidth := w - 6
+	taWidth := w - 4
 	if taWidth < 10 {
 		taWidth = 10
 	}
-	taHeight := h - 7
+	taHeight := h - 2
 	if taHeight < 2 {
 		taHeight = 2
 	}
@@ -75,6 +79,11 @@ func (m *Model) SetSize(w, h int) {
 func (m *Model) SetPage(p core.Page) {
 	m.page = p
 	m.textarea.SetValue(p.Content)
+}
+
+// SetPages updates the list of open buffer pages for the tabufline.
+func (m *Model) SetPages(pages []core.Page) {
+	m.pages = pages
 }
 
 // SetFocused sets focus state.
@@ -197,7 +206,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	return m, nil
 }
 
-// View renders the content editor layout safely.
+// View renders the content editor layout safely with NvChad-style tabufline across the top.
 func (m Model) View() string {
 	if m.width <= 0 || m.height <= 0 {
 		return ""
@@ -205,37 +214,96 @@ func (m Model) View() string {
 
 	m.SetSize(m.width, m.height)
 
-	titleStyle := lipgloss.NewStyle().
-		Bold(true).
-		Foreground(m.theme.TitleFg).
-		MarginBottom(1)
-
-	title := m.page.Title
-	if title == "" {
-		title = "Untitled"
+	// Build NvChad-style tabufline across the top of the editor (NO x close buttons)
+	var tabs []string
+	pagesToRender := m.pages
+	if len(pagesToRender) == 0 && m.page.ID != "" {
+		pagesToRender = []core.Page{m.page}
 	}
-	titleView := titleStyle.Render(title)
+
+	tabActiveStyle := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(m.theme.DarkFg).
+		Background(m.theme.SidebarBg).
+		Padding(0, 1)
+
+	tabInactiveStyle := lipgloss.NewStyle().
+		Foreground(m.theme.MutedFg).
+		Background(lipgloss.Color("#181b21")).
+		Padding(0, 1)
+
+	currentTotalWidth := 0
+	maxTabsWidth := m.width - 4
+	if maxTabsWidth < 10 {
+		maxTabsWidth = 10
+	}
+
+	for _, p := range pagesToRender {
+		tabTitle := p.Title
+		if tabTitle == "" {
+			tabTitle = "Untitled"
+		}
+		if !strings.HasSuffix(tabTitle, ".md") {
+			tabTitle = tabTitle + ".md"
+		}
+
+		var tabStr string
+		if p.ID == m.page.ID {
+			dirty := ""
+			if m.textarea.Value() != m.page.Content {
+				dirty = " ●"
+			}
+			tabStr = tabActiveStyle.Render(" " + tabTitle + dirty)
+		} else {
+			tabStr = tabInactiveStyle.Render(" " + tabTitle)
+		}
+
+		tabW := lipgloss.Width(tabStr)
+		if currentTotalWidth+tabW > maxTabsWidth && len(tabs) > 0 {
+			break
+		}
+		tabs = append(tabs, tabStr)
+		currentTotalWidth += tabW + 1
+	}
+
+	var titleView string
+	if len(tabs) > 0 {
+		titleView = strings.Join(tabs, " ")
+	} else {
+		title := m.page.Title
+		if title == "" {
+			title = "Untitled"
+		}
+		if !strings.HasSuffix(title, ".md") {
+			title = title + ".md"
+		}
+		titleView = tabActiveStyle.Render(" " + title)
+	}
+
 	editorView := m.textarea.View()
 
-	var statusLine string
+	var inner string
 	if m.mode == ModeCommand {
-		statusLine = m.cmdInput.View()
+		inner = lipgloss.JoinVertical(lipgloss.Left, titleView, editorView, m.cmdInput.View())
 	} else if m.statusMessage != "" {
-		statusLine = lipgloss.NewStyle().Foreground(m.theme.NormalBg).Render(m.statusMessage)
+		statusMsg := lipgloss.NewStyle().Foreground(m.theme.NormalBg).Render(m.statusMessage)
+		inner = lipgloss.JoinVertical(lipgloss.Left, titleView, editorView, statusMsg)
 	} else {
-		modeColor := m.theme.NormalBg
-		if m.mode == ModeInsert {
-			modeColor = m.theme.InsertBg
-		}
-		modeBanner := lipgloss.NewStyle().Bold(true).Foreground(modeColor).Render("-- " + m.ModeString() + " --")
-		hint := lipgloss.NewStyle().Foreground(m.theme.MutedFg).Render("  ('i' to insert, 'Esc' normal, ':wq' save & quit)")
-		statusLine = modeBanner + hint
+		inner = lipgloss.JoinVertical(lipgloss.Left, titleView, editorView)
 	}
 
-	inner := lipgloss.JoinVertical(lipgloss.Left, titleView, editorView, "", statusLine)
+	border := m.theme.Border
+	if m.focused {
+		border = m.theme.BorderFocus
+	}
+
 	return lipgloss.NewStyle().
 		Width(m.width-1).
 		Height(m.height).
-		Padding(1, 2).
+		MaxHeight(m.height).
+		BorderStyle(lipgloss.NormalBorder()).
+		BorderRight(true).
+		BorderForeground(border).
+		Padding(0, 1).
 		Render(inner)
 }

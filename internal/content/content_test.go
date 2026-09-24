@@ -19,7 +19,7 @@ func TestContentComponent(t *testing.T) {
 	if !strings.Contains(view, "Notes") {
 		t.Errorf("expected content view to contain title 'Notes', got %q", view)
 	}
-	if !strings.Contains(view, "NORMAL") {
-		t.Errorf("expected content view to contain mode 'NORMAL', got %q", view)
+	if c.ModeString() != "NORMAL" {
+		t.Errorf("expected content mode 'NORMAL', got %q", c.ModeString())
 	}
 }

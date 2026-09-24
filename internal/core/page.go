@@ -17,5 +17,7 @@ type Page struct {
 	Title     string    `json:"title"`
 	Blocks    []Block   `json:"blocks"`
 	Content   string    `json:"content"`
+	ParentID  string    `json:"parent_id,omitempty"`
+	Icon      string    `json:"icon,omitempty"`
 	UpdatedAt time.Time `json:"updated_at"`
 }

@@ -1,29 +1,40 @@
 package app
 
 const (
-	// SidebarWidth defines fixed character width of the sidebar pane.
-	SidebarWidth = 28
+	// SidebarWidth defines character width of the sidebar pane when open.
+	SidebarWidth = 26
 	// MinTermWidth is the minimum required terminal width.
-	MinTermWidth = 40
+	MinTermWidth = 50
 	// MinTermHeight is the minimum required terminal height.
 	MinTermHeight = 10
 )
 
-// CalculateLayout splits window bounds into header, sidebar, and content dimensions,
-// returning zeros if terminal dimensions are below minimum thresholds.
-func CalculateLayout(totalWidth, totalHeight, headerHeight int) (sidebarW, contentW, contentH int) {
+// CalculateLayout splits window bounds into header, sidebar, editor, and preview dimensions.
+// If sidebarOpen is false, the sidebar collapses and editor/preview take the full window.
+func CalculateLayout(totalWidth, totalHeight, headerHeight, footerHeight int, sidebarOpen bool) (sidebarW, editorW, previewW, bodyH int) {
 	if totalWidth < MinTermWidth || totalHeight < MinTermHeight {
-		return 0, 0, 0
+		return 0, 0, 0, 0
+	}
+
+	bodyH = totalHeight - headerHeight - footerHeight
+	if bodyH < 3 {
+		bodyH = 3
+	}
+
+	if !sidebarOpen {
+		sidebarW = 0
+		editorW = totalWidth / 2
+		previewW = totalWidth - editorW
+		return sidebarW, editorW, previewW, bodyH
 	}
 
 	sidebarW = SidebarWidth
-	contentW = totalWidth - sidebarW
-	if contentW < 10 {
-		contentW = 10
+	remainW := totalWidth - sidebarW
+	if remainW < 20 {
+		return sidebarW, remainW, 0, bodyH
 	}
-	contentH = totalHeight - headerHeight
-	if contentH < 3 {
-		contentH = 3
-	}
-	return sidebarW, contentW, contentH
+
+	editorW = remainW / 2
+	previewW = remainW - editorW
+	return sidebarW, editorW, previewW, bodyH
 }

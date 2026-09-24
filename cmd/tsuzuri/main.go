@@ -24,9 +24,10 @@ func main() {
 	log.Println("Starting Tsuzuri application...")
 
 	store := core.NewStore()
+	store.SeedHierarchy()
 	appModel := app.New(store)
 
-	p := tea.NewProgram(appModel, tea.WithAltScreen())
+	p := tea.NewProgram(appModel, tea.WithAltScreen(), tea.WithMouseCellMotion())
 	if _, err := p.Run(); err != nil {
 		log.Printf("Fatal error running program: %v\n", err)
 		fmt.Fprintf(os.Stderr, "Error running Tsuzuri application: %v\n", err)
