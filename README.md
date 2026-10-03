@@ -168,6 +168,9 @@ Leader is `Space`, as in NvChad. Press `?` or `Space h` in the app for the cheat
 | NORMAL | `gg` / `G` | Top / bottom |
 | NORMAL | `Ctrl+D` / `Ctrl+U`, `Ctrl+E` / `Ctrl+Y` | Scroll |
 | NORMAL | `x` / `dd` | Delete character / line |
+| NORMAL | `yy` / `p` | Copy line / paste from the clipboard |
+| NORMAL | `v` / `V` | Visual (character / line) selection: `y` copy, `d` cut, `Esc` cancel |
+| Mouse | drag | Select text; it's copied on release (a toast confirms) |
 | INSERT | `/` | Block menu (at line start or after a space; `↑↓`, `Enter`, `Esc`) |
 | INSERT | `Tab` / `Shift+Tab` | Indent (nests list items) / outdent |
 | INSERT | `Esc` | Back to NORMAL |

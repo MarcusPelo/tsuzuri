@@ -3,13 +3,16 @@
 package content
 
 import (
+	"regexp"
+	"strings"
+
 	"github.com/jaisuriya-11/tsuzuri/internal/core"
 	"github.com/jaisuriya-11/tsuzuri/internal/highlight"
 	"github.com/jaisuriya-11/tsuzuri/internal/textarea"
 	"github.com/jaisuriya-11/tsuzuri/internal/theme"
 	"github.com/jaisuriya-11/tsuzuri/internal/ui"
-	"regexp"
 
+	"github.com/atotto/clipboard"
 	"github.com/charmbracelet/bubbles/cursor"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
@@ -27,6 +30,9 @@ type Model struct {
 	pending  string // first key of a two-key Vim command ("g", "d")
 	slash    *slashMenu
 	hl       *hlCache // shared across copies so View can memoise
+	dragging bool
+	dragRow  int
+	dragCol  int
 	width    int
 	height   int
 	focused  bool
@@ -141,6 +147,10 @@ func (m Model) ModeString() string {
 		return "INSERT"
 	case ModeCommand:
 		return "COMMAND"
+	case ModeVisual:
+		return "VISUAL"
+	case ModeVisualLine:
+		return "V-LINE"
 	default:
 		return "NORMAL"
 	}
@@ -237,7 +247,18 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		return m, nil
 	}
 
+	if k, ok := msg.(tea.KeyMsg); ok && m.textarea.HasSelection() &&
+		m.mode != ModeVisual && m.mode != ModeVisualLine {
+		m.textarea.ClearSelection() // a key press drops a mouse selection
+		_ = k
+	}
+
 	switch m.mode {
+	case ModeVisual, ModeVisualLine:
+		if k, ok := msg.(tea.KeyMsg); ok {
+			return m.handleVisualKey(k)
+		}
+		return m, nil
 	case ModeInsert:
 		k, isKey := msg.(tea.KeyMsg)
 		if isKey && m.slash != nil {
@@ -315,6 +336,8 @@ func (m Model) handleNormalKey(k tea.KeyMsg) (Model, tea.Cmd) {
 			ta.GotoTop()
 		case "dd":
 			ta.DeleteLine()
+		case "yy":
+			return m, copyCmd(ta.CurrentLine() + "\n")
 		}
 		return m, nil
 	}
@@ -361,8 +384,17 @@ func (m Model) handleNormalKey(k tea.KeyMsg) (Model, tea.Cmd) {
 		ta.CursorEnd()
 	case "G":
 		ta.GotoBottom()
-	case "g", "d":
+	case "g", "d", "y":
 		m.pending = s
+	case "v", "V":
+		m.mode = ModeVisual
+		if s == "V" {
+			m.mode = ModeVisualLine
+		}
+		ta.SelectLinewise = s == "V"
+		ta.StartSelection()
+	case "p":
+		return m, m.paste()
 	case "ctrl+d":
 		ta.ScrollBy(m.halfPage())
 		ta.MoveCursorBy(m.halfPage())
@@ -400,11 +432,99 @@ func (m Model) handleMouse(msg tea.MouseMsg) (Model, tea.Cmd) {
 				return m, cmd
 			}
 		}
-		if msg.Action == tea.MouseActionPress {
+		switch msg.Action {
+		case tea.MouseActionPress:
+			if m.mode == ModeVisual || m.mode == ModeVisualLine {
+				m.mode = ModeNormal
+			}
+			m.textarea.ClearSelection()
+			m.textarea.SelectLinewise = false
 			m.textarea.ClickAt(msg.X, msg.Y)
+			m.dragRow, m.dragCol = m.textarea.RowCol()
+			m.dragging = true
+		case tea.MouseActionMotion:
+			if !m.dragging {
+				break
+			}
+			m.textarea.ClickAt(msg.X, msg.Y)
+			if r, c := m.textarea.RowCol(); !m.textarea.HasSelection() && (r != m.dragRow || c != m.dragCol) {
+				m.textarea.SetAnchor(m.dragRow, m.dragCol)
+			}
+		case tea.MouseActionRelease:
+			m.dragging = false
+			if m.textarea.HasSelection() {
+				// Auto-copy on release, like selecting text in Claude Code.
+				return m, copyCmd(m.textarea.SelectedText())
+			}
 		}
 	}
 	return m, nil
+}
+
+func copyCmd(text string) tea.Cmd {
+	if text == "" {
+		return nil
+	}
+	return func() tea.Msg { return core.CopyMsg{Text: text} }
+}
+
+// handleVisualKey runs Vim visual mode: motions extend the selection,
+// y copies, d/x cut, Esc cancels.
+func (m Model) handleVisualKey(k tea.KeyMsg) (Model, tea.Cmd) {
+	ta := &m.textarea
+	exit := func() {
+		m.mode = ModeNormal
+		ta.ClearSelection()
+		ta.SelectLinewise = false
+	}
+	switch s := k.String(); s {
+	case "esc", "ctrl+c":
+		exit()
+		return m, nil
+	case "v", "V":
+		if (s == "v") == (m.mode == ModeVisual) {
+			exit()
+			return m, nil
+		}
+		m.mode = map[string]VimMode{"v": ModeVisual, "V": ModeVisualLine}[s]
+		ta.SelectLinewise = s == "V"
+		return m, nil
+	case "y":
+		text := ta.SelectedText()
+		exit()
+		return m, copyCmd(text)
+	case "d", "x", "delete":
+		text := ta.SelectedText()
+		ta.DeleteSelection()
+		exit()
+		return m, copyCmd(text)
+	case "h", "j", "k", "l", "left", "right", "up", "down", "w", "b", "0", "^", "$",
+		"home", "end", "G", "g", "ctrl+d", "ctrl+u", "pgdown", "pgup":
+		mode := m.mode
+		m.mode = ModeNormal
+		m, _ = m.handleNormalKey(k)
+		m.mode = mode
+	}
+	return m, nil
+}
+
+// paste inserts the system clipboard after the cursor (Vim's p); text
+// ending in a newline is pasted as whole lines below.
+func (m *Model) paste() tea.Cmd {
+	text, err := clipboard.ReadAll()
+	if err != nil || text == "" {
+		return func() tea.Msg { return core.StatusMsg{Text: "Clipboard is empty or unavailable", Error: err != nil} }
+	}
+	text = strings.ReplaceAll(text, "\r\n", "\n")
+	if strings.HasSuffix(text, "\n") {
+		m.textarea.OpenLineBelow()
+		m.textarea.InsertString(strings.TrimSuffix(text, "\n"))
+	} else {
+		m.textarea.CharRight()
+		m.textarea.InsertString(text)
+	}
+	m.textarea.EnsureVisible()
+	return nil
 }
 
 // View renders the editor at exactly width × height.

@@ -243,6 +243,14 @@ type Model struct {
 	// (syntax highlighting). tsuzuri addition.
 	LineColors [][]lipgloss.Color
 
+	// SelectionStyle paints selected text (tsuzuri addition).
+	SelectionStyle lipgloss.Style
+	selecting      bool
+	// SelectLinewise extends the selection to whole lines (Vim's V).
+	SelectLinewise bool
+	anchorRow      int
+	anchorCol      int
+
 	// MaxWidth is the maximum width of the text area in columns. If 0 or less,
 	// there's no limit.
 	MaxWidth int

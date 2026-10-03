@@ -60,6 +60,12 @@ type SlashActionMsg struct {
 	Action string
 }
 
+// CopyMsg asks the app to put Text on the system clipboard and confirm it
+// with a toast.
+type CopyMsg struct {
+	Text string
+}
+
 // ThemeMsg switches the colour theme (":colorscheme name"). An empty Name
 // opens the theme picker.
 type ThemeMsg struct {

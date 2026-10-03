@@ -270,28 +270,145 @@ func (m *Model) OutdentLine(n int) {
 // CurrentLine returns the cursor's whole line.
 func (m Model) CurrentLine() string { return string(m.value[m.row]) }
 
+// StartSelection anchors a selection at the cursor.
+func (m *Model) StartSelection() {
+	m.selecting = true
+	m.anchorRow, m.anchorCol = m.row, m.col
+}
+
+// SetAnchor starts a selection anchored at row/col (the cursor is the
+// other end).
+func (m *Model) SetAnchor(row, col int) {
+	m.selecting = true
+	m.anchorRow, m.anchorCol = row, col
+}
+
+// ClearSelection drops any selection.
+func (m *Model) ClearSelection() { m.selecting = false }
+
+// HasSelection reports whether a selection is active.
+func (m Model) HasSelection() bool { return m.selecting }
+
+// selectionRange returns the selection as ordered, inclusive positions.
+func (m Model) selectionRange() (r1, c1, r2, c2 int) {
+	r1, c1, r2, c2 = m.anchorRow, m.anchorCol, m.row, m.col
+	if r2 < r1 || (r2 == r1 && c2 < c1) {
+		r1, c1, r2, c2 = r2, c2, r1, c1
+	}
+	r1 = clamp(r1, 0, len(m.value)-1)
+	r2 = clamp(r2, 0, len(m.value)-1)
+	if m.SelectLinewise {
+		c1, c2 = 0, max(len(m.value[r2])-1, 0)
+	}
+	return
+}
+
+func (m Model) inSelection(row, col int) bool {
+	if !m.selecting {
+		return false
+	}
+	r1, c1, r2, c2 := m.selectionRange()
+	switch {
+	case row < r1 || row > r2:
+		return false
+	case r1 == r2:
+		return col >= c1 && col <= c2
+	case row == r1:
+		return col >= c1
+	case row == r2:
+		return col <= c2
+	}
+	return true
+}
+
+// SelectedText returns the selected text (the end character included, as
+// in Vim's visual mode).
+func (m Model) SelectedText() string {
+	if !m.selecting {
+		return ""
+	}
+	r1, c1, r2, c2 := m.selectionRange()
+	var b strings.Builder
+	for r := r1; r <= r2; r++ {
+		line := m.value[r]
+		from, to := 0, len(line)
+		if r == r1 {
+			from = min(c1, len(line))
+		}
+		if r == r2 {
+			to = min(c2+1, len(line))
+		}
+		if m.SelectLinewise {
+			to = len(line)
+		}
+		if from < to {
+			b.WriteString(string(line[from:to]))
+		}
+		if r < r2 {
+			b.WriteByte('\n')
+		}
+	}
+	return b.String()
+}
+
+// DeleteSelection removes the selected text and clears the selection.
+func (m *Model) DeleteSelection() {
+	if !m.selecting {
+		return
+	}
+	r1, c1, r2, c2 := m.selectionRange()
+	if m.SelectLinewise {
+		if r2-r1+1 >= len(m.value) {
+			m.value = [][]rune{{}}
+		} else {
+			m.value = append(m.value[:r1], m.value[r2+1:]...)
+		}
+		m.row, m.col = min(r1, len(m.value)-1), 0
+		m.selecting = false
+		m.EnsureVisible()
+		return
+	}
+	head := append([]rune(nil), m.value[r1][:min(c1, len(m.value[r1]))]...)
+	tail := []rune{}
+	if c2+1 < len(m.value[r2]) {
+		tail = append(tail, m.value[r2][c2+1:]...)
+	}
+	merged := append(head, tail...)
+	m.value = append(m.value[:r1], append([][]rune{merged}, m.value[r2+1:]...)...)
+	m.row, m.col = r1, min(c1, len(merged))
+	m.selecting = false
+	m.EnsureVisible()
+}
+
 // paint renders runes of line l starting at rune offset off, applying
 // LineColors on top of style.
 func (m Model) paint(style lipgloss.Style, l, off int, runes []rune) string {
-	if l >= len(m.LineColors) || len(m.LineColors[l]) == 0 {
+	if !m.selecting && (l >= len(m.LineColors) || len(m.LineColors[l]) == 0) {
 		return style.Render(string(runes))
 	}
-	colors := m.LineColors[l]
+	var colors []lipgloss.Color
+	if l < len(m.LineColors) {
+		colors = m.LineColors[l]
+	}
 	color := func(i int) lipgloss.Color {
 		if i := off + i; i >= 0 && i < len(colors) {
 			return colors[i]
 		}
 		return ""
 	}
+	sel := func(i int) bool { return m.inSelection(l, off+i) }
 	var b strings.Builder
 	start := 0
 	for i := 1; i <= len(runes); i++ {
-		if i < len(runes) && color(i) == color(start) {
+		if i < len(runes) && color(i) == color(start) && sel(i) == sel(start) {
 			continue
 		}
 		st := style
 		if c := color(start); c != "" {
 			st = st.Foreground(c)
+		}
+		if sel(start) {
+			st = st.Inherit(m.SelectionStyle).Background(m.SelectionStyle.GetBackground())
 		}
 		b.WriteString(st.Render(string(runes[start:i])))
 		start = i

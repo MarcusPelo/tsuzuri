@@ -645,3 +645,48 @@ func TestSlashImageUsesFileBrowserAndCopiesIntoAssets(t *testing.T) {
 		t.Fatalf("expected file link, got %q", got.Content)
 	}
 }
+
+func TestCopyByDragYankAndVisualMode(t *testing.T) {
+	store := newTestStore(t)
+	if _, err := store.SaveAs("", "doc", "hello world\nsecond line\nthird"); err != nil {
+		t.Fatal(err)
+	}
+	var copied []string
+	h := newHarness(t, store, app.WithClipboard(func(s string) error { copied = append(copied, s); return nil }))
+	h.keys("1")
+
+	// yy copies the line and shows a toast.
+	h.keys("yy")
+	if len(copied) != 1 || copied[0] != "hello world\n" {
+		t.Fatalf("yy copied %q", copied)
+	}
+	if v := h.view(); !strings.Contains(v, "Copied 12 characters") {
+		t.Fatalf("expected a copy toast:\n%s", v)
+	}
+
+	// V j y copies two whole lines.
+	h.keys("Vjy")
+	if got := copied[len(copied)-1]; got != "hello world\nsecond line" {
+		t.Fatalf("V-line copy got %q", got)
+	}
+
+	// Mouse drag across "world" auto-copies on release.
+	v := h.view()
+	x, y := find(t, v, "world")
+	h.send(tea.MouseMsg{X: x, Y: y, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
+	h.send(tea.MouseMsg{X: x + 4, Y: y, Button: tea.MouseButtonLeft, Action: tea.MouseActionMotion})
+	h.send(tea.MouseMsg{X: x + 4, Y: y, Button: tea.MouseButtonLeft, Action: tea.MouseActionRelease})
+	if got := copied[len(copied)-1]; got != "world" {
+		t.Fatalf("drag copy got %q", got)
+	}
+
+	// v + d cuts (and copies) the selection.
+	h.keys("0vlld")
+	if got, _ := store.Get("doc.md"); got.Content != "hello world\nsecond line\nthird" {
+		t.Fatalf("cut must not save by itself, disk: %q", got.Content)
+	}
+	h.send(tea.KeyMsg{Type: tea.KeyCtrlS})
+	if got, _ := store.Get("doc.md"); !strings.HasPrefix(got.Content, "lo world") {
+		t.Fatalf("expected 'hel' cut, got %q", got.Content)
+	}
+}

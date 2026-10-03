@@ -16,6 +16,8 @@ All notable changes to this project are documented here. The format follows
 - Syntax highlighting (chroma, 250+ languages) for fenced code in the editor
   and preview, plus Markdown colouring in the editor.
 - Local images are drawn in the preview with half-block characters.
+- Copy: drag to select (auto-copied with a toast), `yy`, visual `v`/`V` +
+  `y`/`d`, `p` to paste. Uses the system clipboard, or OSC 52 over SSH.
 - `\` opens the finder (instead of `/`).
 - `/image`, `/video`, `/audio`, `/file` open the system file dialog (or a
   built-in browser) and copy the file into the note's `assets/` folder.

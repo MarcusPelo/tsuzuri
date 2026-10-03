@@ -69,6 +69,12 @@ type Model struct {
 	status    string
 	statusErr bool
 
+	writeClipboard func(string) error
+
+	toast    string
+	toastSeq int
+	dragging bool // a mouse drag started in the editor
+
 	dashboard dashboard.Model
 	sidebar   sidebar.Model
 	content   content.Model
@@ -85,6 +91,11 @@ func WithTheme(name string) Option {
 			m.applyTheme(th, false)
 		}
 	}
+}
+
+// WithClipboard replaces the system clipboard writer (used by tests).
+func WithClipboard(write func(string) error) Option {
+	return func(m *Model) { m.writeClipboard = write }
 }
 
 // WithConfigPath saves theme changes to the given config file.
@@ -305,6 +316,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.openFile(msg.ID)
 	case core.FindRequestMsg:
 		return m, m.openFinder()
+	case core.CopyMsg:
+		return m, m.copyText(msg.Text)
+	case toastExpiredMsg:
+		if msg.id == m.toastSeq {
+			m.toast = ""
+		}
+		return m, nil
 	case core.SlashActionMsg:
 		switch msg.Action {
 		case "page":
@@ -632,11 +650,26 @@ func (m *Model) handleMouse(msg tea.MouseMsg) tea.Cmd {
 		}
 		return nil
 	}
+	l := m.layout()
+	// Drags that start in the editor keep going there (text selection).
+	if msg.Action == tea.MouseActionMotion || msg.Action == tea.MouseActionRelease {
+		if !m.dragging {
+			return nil
+		}
+		if msg.Action == tea.MouseActionRelease {
+			m.dragging = false
+		}
+		local := msg
+		local.X -= l.EditorX
+		local.Y -= l.BodyY
+		var cmd tea.Cmd
+		m.content, cmd = m.content.Update(local)
+		return cmd
+	}
 	if msg.Action != tea.MouseActionPress {
 		return nil
 	}
 
-	l := m.layout()
 	if msg.Y == 0 {
 		return m.handleTabClick(msg)
 	}
@@ -672,6 +705,7 @@ func (m *Model) handleMouse(msg tea.MouseMsg) tea.Cmd {
 	case focusSidebar:
 		m.sidebar, cmd = m.sidebar.Update(local)
 	case focusEditor:
+		m.dragging = msg.Button == tea.MouseButtonLeft
 		m.content, cmd = m.content.Update(local)
 	case focusPreview:
 		m.preview, cmd = m.preview.Update(local)
@@ -775,5 +809,6 @@ func (m Model) View() string {
 		x, y := ui.Center(m.width, m.height, lipgloss.Width(box), lipgloss.Height(box))
 		screen = ui.Overlay(screen, box, x, y)
 	}
+	screen = m.renderToast(screen)
 	return ui.Paint(screen, lipgloss.NewStyle().Foreground(m.theme.Fg).Background(m.theme.Bg))
 }

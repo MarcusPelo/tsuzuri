@@ -169,6 +169,10 @@ func (m *Model) modeBlock() (string, lipgloss.Color) {
 	switch m.content.Mode() {
 	case content.ModeInsert:
 		return "  INSERT ", th.DarkPurple
+	case content.ModeVisual:
+		return " \U000f0489 VISUAL ", th.Orange
+	case content.ModeVisualLine:
+		return " \U000f0489 V-LINE ", th.Orange
 	case content.ModeCommand:
 		return "  COMMAND ", th.Green
 	}
