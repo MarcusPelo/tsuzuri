@@ -64,7 +64,9 @@ func (m *Model) moveToVisual(v, col int) {
 				segLen--
 			}
 			m.row = r
-			m.col = start + clamp(col, 0, segLen)
+			// The last wrapped segment carries a padding space, so clamp
+			// to the real line length as well.
+			m.col = min(start+clamp(col, 0, segLen), len(l))
 			return
 		}
 		acc += len(segs)

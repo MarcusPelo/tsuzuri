@@ -176,3 +176,36 @@ func TestTabIndents(t *testing.T) {
 		t.Fatalf("Tab in text should insert two spaces, got %q", c.Value())
 	}
 }
+
+func TestWideRunesNeverPanic(t *testing.T) {
+	c := content.New(theme.DefaultTheme())
+	c.SetFocused(true)
+	line := strings.Repeat("綴り • Terminal 綴 ", 6)
+	for w := 20; w <= 60; w++ {
+		c.SetSize(w, 10)
+		c.SetPage(core.Page{ID: "a.md", Content: line + "\n" + line})
+		for i := 0; i < len([]rune(line))+2; i++ {
+			_ = c.View()
+			c, _ = c.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
+		}
+		c = keys(c, "A")
+		_ = c.View()
+		c, _ = c.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	}
+}
+
+func TestClickPastLineEndNeverPanics(t *testing.T) {
+	c := content.New(theme.DefaultTheme())
+	c.SetSize(80, 10)
+	c.SetPage(core.Page{ID: "a.md", Content: "```\n#include <stdio.h>\n\n```\n\n![x](a.png)"})
+	for y := 0; y < 8; y++ {
+		for _, x := range []int{0, 6, 9, 10, 20, 79} {
+			c, _ = c.Update(tea.MouseMsg{X: x, Y: y, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
+			_ = c.View()
+		}
+	}
+	for i := 0; i < 5; i++ {
+		c, _ = c.Update(tea.MouseMsg{Button: tea.MouseButtonWheelDown, Action: tea.MouseActionPress})
+		_ = c.View()
+	}
+}

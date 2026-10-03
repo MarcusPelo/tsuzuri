@@ -1173,8 +1173,11 @@ func (m Model) View() string {
 				padding -= m.width - strwidth
 			}
 			if m.row == l && lineInfo.RowOffset == wl {
-				s.WriteString(m.paint(style, l, off, wrappedLine[:lineInfo.ColumnOffset]))
-				if m.col >= len(line) && lineInfo.CharOffset >= m.width {
+				// tsuzuri: the cursor may sit just past a segment whose
+				// trailing space was trimmed above (wide CJK runes); clamp.
+				co := min(lineInfo.ColumnOffset, len(wrappedLine))
+				s.WriteString(m.paint(style, l, off, wrappedLine[:co]))
+				if co >= len(wrappedLine) || (m.col >= len(line) && lineInfo.CharOffset >= m.width) {
 					m.Cursor.SetChar(" ")
 					s.WriteString(m.Cursor.View())
 				} else {
