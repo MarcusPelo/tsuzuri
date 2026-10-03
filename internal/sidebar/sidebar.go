@@ -13,8 +13,11 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// Rows above the tree: workspace title, find button, spacer.
-const treeTop = 3
+// Rows above the tree: workspace title, spacer, find button, spacer.
+const (
+	findRow = 2
+	treeTop = 4
+)
 
 // TreeItem represents a flattened visible node in the sidebar tree.
 type TreeItem struct {
@@ -401,7 +404,7 @@ func (m Model) handleMouse(msg tea.MouseMsg) (Model, tea.Cmd) {
 	if msg.Action != tea.MouseActionPress || msg.Button != tea.MouseButtonLeft {
 		return m, nil
 	}
-	if msg.Y == 1 {
+	if msg.Y == findRow {
 		return m, findCmd
 	}
 	if msg.Y < treeTop {
@@ -452,7 +455,7 @@ func (m Model) View() string {
 
 	// 1. Workspace title.
 	title := bg.Foreground(th.Blue).Bold(true).Render(" 󰉖 " + ui.Truncate(strings.ToUpper(m.workspace), w-4))
-	rows = append(rows, ui.FitLine(title, w, bg))
+	rows = append(rows, ui.FitLine(title, w, bg), "")
 
 	// 2. Find button (opens the global finder).
 	fieldW := max(w-2, 4)

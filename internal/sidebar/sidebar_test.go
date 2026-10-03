@@ -120,8 +120,8 @@ func TestSidebarSlashOpensFinderAndClickKeepsFocus(t *testing.T) {
 		t.Fatal("expected '/' to request the global finder")
 	}
 
-	// Rows start at y=3 (title, find button, spacer). Click b.md.
-	sb, cmd = sb.Update(tea.MouseMsg{X: 5, Y: 4, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
+	// Rows start at y=4 (title, spacer, find button, spacer). Click b.md.
+	sb, cmd = sb.Update(tea.MouseMsg{X: 5, Y: 5, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
 	if cmd == nil {
 		t.Fatal("expected click on a note to open it")
 	}

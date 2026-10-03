@@ -75,9 +75,8 @@ func (m *Model) tabline() (string, []tabSpan) {
 	x := 0
 
 	if l.SidebarW > 0 {
-		label := fill.Foreground(th.GreyFg2).Render("  󰙅  ") + fill.Foreground(th.GreyFg2).Bold(true).Render("EXPLORER")
 		w := l.SidebarW + 1
-		b.WriteString(ui.FitLine(label, w, fill))
+		b.WriteString(ui.FitLine("", w, fill))
 		spans = append(spans, tabSpan{kind: hitExplorer, start: 0, end: w})
 		x = w
 	}
