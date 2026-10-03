@@ -693,7 +693,7 @@ func (m Model) View() string {
 
 	var screen string
 	if m.viewMode == viewModeDashboard {
-		screen = lipgloss.JoinVertical(lipgloss.Left, m.dashboard.View(), m.statusline(), m.cmdline())
+		screen = lipgloss.JoinVertical(lipgloss.Left, m.dashboard.View(), m.bottomBar())
 	} else {
 		l := m.layout()
 		div := ui.Column("│", l.BodyH, lipgloss.NewStyle().Foreground(m.theme.Line))
@@ -709,8 +709,7 @@ func (m Model) View() string {
 		screen = lipgloss.JoinVertical(lipgloss.Left,
 			tabs,
 			lipgloss.JoinHorizontal(lipgloss.Top, cols...),
-			m.statusline(),
-			m.cmdline(),
+			m.bottomBar(),
 		)
 	}
 

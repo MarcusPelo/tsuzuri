@@ -11,7 +11,7 @@ const (
 	minPreviewTotal = 90
 
 	tablineHeight = 1
-	footerHeight  = 2 // statusline + command line
+	footerHeight  = 1 // statusline (the ":" prompt takes its place while typing)
 )
 
 // Layout holds the screen geometry of every pane. X offsets are absolute

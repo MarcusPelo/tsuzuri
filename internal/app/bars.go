@@ -260,26 +260,39 @@ func (m *Model) statusline() string {
 		parts = parts[1:]
 		right = strings.Join(parts, "")
 	}
+	if msg := m.message(); msg != "" {
+		room := m.width - lipgloss.Width(left) - lipgloss.Width(right) - 1
+		if lipgloss.Width(msg) > room {
+			msg = ui.FitLine(msg, max(room, 0), fill)
+		}
+		left += msg
+	}
 	gap := m.width - lipgloss.Width(left) - lipgloss.Width(right)
 	line := left + fill.Render(strings.Repeat(" ", max(gap, 0))) + right
 	return ui.FitLine(line, m.width, fill)
 }
 
-func (m *Model) cmdline() string {
-	th := m.theme
-	plain := lipgloss.NewStyle()
+// bottomBar is the single bottom row: the ":" prompt while typing a
+// command (like Vim with cmdheight=0), otherwise the statusline.
+func (m *Model) bottomBar() string {
 	if m.viewMode == viewModeWorkspace && m.focus == focusEditor && m.content.Mode() == content.ModeCommand {
-		return ui.FitLine(m.content.CommandView(m.width), m.width, plain)
+		bar := lipgloss.NewStyle().Background(m.theme.StatusBg)
+		return ui.FitLine(m.content.CommandView(m.width), m.width, bar)
 	}
-	if m.status != "" {
-		fg := th.Fg
-		if m.statusErr {
-			fg = th.Red
-		}
-		return ui.FitLine(lipgloss.NewStyle().Foreground(fg).Render(m.status), m.width, plain)
+	return m.statusline()
+}
+
+// message is the transient text shown in the middle of the statusline.
+func (m *Model) message() string {
+	th := m.theme
+	fill := lipgloss.NewStyle().Background(th.StatusBg)
+	switch {
+	case m.status != "" && m.statusErr:
+		return fill.Foreground(th.Red).Render("  " + m.status)
+	case m.status != "":
+		return fill.Foreground(th.Fg).Render("  " + m.status)
+	case m.leaderPending:
+		return fill.Foreground(th.Blue).Bold(true).Render("  <Space>")
 	}
-	if m.leaderPending {
-		return ui.FitLine(lipgloss.NewStyle().Foreground(th.Blue).Render("<Space>"), m.width, plain)
-	}
-	return ui.FitLine("", m.width, plain)
+	return ""
 }
