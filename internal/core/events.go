@@ -15,17 +15,36 @@ type PageUpdatedMsg struct {
 	Page Page
 }
 
-// PageDeletedMsg is emitted when a page is deleted.
+// PageDeletedMsg asks for a page (or folder) to be deleted. The app confirms
+// with the user before anything is removed from disk.
 type PageDeletedMsg struct {
 	ID string
 }
 
-// VimSaveMsg is emitted when the user executes :w in the editor.
+// VimSaveMsg is emitted by :w. Path is set by ":w <name>", which saves the
+// buffer under a new name (Save As).
 type VimSaveMsg struct {
 	Content string
+	Path    string
 }
 
-// VimQuitMsg is emitted when the user executes :q or :wq in the editor.
+// VimQuitMsg is emitted by :q, :q!, :wq and :x. Force skips the unsaved
+// changes prompt.
 type VimQuitMsg struct {
-	Save bool
+	Save  bool
+	Force bool
+}
+
+// VimCloseBufferMsg is emitted by :bd / :bd!.
+type VimCloseBufferMsg struct {
+	Force bool
+}
+
+// VimNewBufferMsg is emitted by :enew / :new.
+type VimNewBufferMsg struct{}
+
+// StatusMsg shows a one-line message in the command line row.
+type StatusMsg struct {
+	Text  string
+	Error bool
 }

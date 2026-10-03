@@ -3,6 +3,7 @@ package core_test
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/jaisuriya-11/tsuzuri/internal/core"
@@ -252,5 +253,68 @@ func TestNewStoreCreatesMissingWorkspaceDir(t *testing.T) {
 	}
 	if info, err := os.Stat(store.Root()); err != nil || !info.IsDir() {
 		t.Errorf("expected workspace directory to be created, got err=%v", err)
+	}
+}
+
+func TestNormalizeNotePath(t *testing.T) {
+	cases := []struct {
+		dir, name, want string
+		wantErr         bool
+	}{
+		{"", "ideas", "ideas.md", false},
+		{"notes/work", "plan.md", "notes/work/plan.md", false},
+		{"/notes/", "Plan.MD", "notes/Plan.md", false},
+		{"", "v1.2 notes", "v1.2 notes.md", false},
+		{"", "draft.txt", "draft.txt.md", false},
+		{"", "  ", "", true},
+		{"", ".md", "", true},
+		{"", "a/b", "", true},
+		{"..", "x", "", true},
+		{".git", "x", "", true},
+	}
+	for _, c := range cases {
+		got, err := core.NormalizeNotePath(c.dir, c.name)
+		if (err != nil) != c.wantErr || got != c.want {
+			t.Errorf("NormalizeNotePath(%q, %q) = %q, %v; want %q, err=%v", c.dir, c.name, got, err, c.want, c.wantErr)
+		}
+	}
+}
+
+func TestSaveAsCreatesFoldersAndRefusesOverwrite(t *testing.T) {
+	s := newTestStore(t)
+	p, err := s.SaveAs("new/folder", "note", "# hi")
+	if err != nil {
+		t.Fatalf("SaveAs: %v", err)
+	}
+	if p.ID != "new/folder/note.md" || p.Title != "note" {
+		t.Fatalf("unexpected page %+v", p)
+	}
+	got, err := s.Get(p.ID)
+	if err != nil || got.Content != "# hi" {
+		t.Fatalf("Get after SaveAs = %+v, %v", got, err)
+	}
+	if _, err := s.SaveAs("new/folder", "note.md", "x"); err == nil {
+		t.Fatal("expected overwrite to be refused")
+	}
+	dirs := s.Dirs()
+	want := []string{"", "new", "new/folder"}
+	if strings.Join(dirs, ",") != strings.Join(want, ",") {
+		t.Fatalf("Dirs = %v, want %v", dirs, want)
+	}
+}
+
+func TestRenameKeepsContent(t *testing.T) {
+	s := newTestStore(t)
+	p, err := s.SaveAs("", "old", "keep me")
+	if err != nil {
+		t.Fatal(err)
+	}
+	renamed, err := s.Rename(p.ID, "new.md")
+	if err != nil {
+		t.Fatalf("Rename: %v", err)
+	}
+	got, err := s.Get(renamed.ID)
+	if err != nil || got.Content != "keep me" || renamed.ID != "new.md" {
+		t.Fatalf("after rename got %+v (id %q), err %v", got, renamed.ID, err)
 	}
 }

@@ -23,14 +23,14 @@
 
 ## Features
 
-- **Your files, not a database.** Every page is a `.md` file in a normal folder. Use git, sync it, grep it, open it in any other editor.
-- **Notion-style nesting.** A page can have sub-pages: `Project.md` plus a sibling `Project/` folder. Plain folders show up as folders.
-- **NvChad-style UI.** Dashboard landing screen, tree sidebar, editor, live Markdown preview and a status line.
-- **Vim editing.** `NORMAL`, `INSERT` and `COMMAND` modes with `:w`, `:q`, `:wq`, `:x`, `:q!`.
-- **Buffer tabs.** Open several pages at once, switch with `[` / `]`, close with `x`. Unsaved tabs show a `●`.
-- **No surprise files.** New pages stay in memory until you `:w`, like an unsaved Vim buffer.
-- **Live preview.** Headings, checklists, callouts, code blocks and tables render as you type.
-- **Search** the tree with `/`, plus mouse support.
+- **Your files, not a database.** Every note is a `.md` file in a normal folder. Use git, sync it, grep it, open it in any other editor.
+- **NvChad look and feel.** nvdash-style start screen, nvim-tree explorer with indent guides, a clickable buffer tabline and an NvChad statusline (mode, file, folder, word count, cursor position).
+- **VSCode-style unsaved tabs.** `Ctrl+N` opens an `Untitled-1` tab that lives only in memory. The first save opens **Save As**: pick a folder (or type a new one) and a name. `.md` is added automatically and nothing else can be written.
+- **Edits are never lost by accident.** Unsaved changes survive tab switches, closing a dirty tab asks *Save / Don't Save / Cancel*, quitting offers *Save All*, and deleting a file asks first.
+- **Vim editing.** `NORMAL`, `INSERT` and `COMMAND` modes with motions (`hjkl`, `w`/`b`, `0`/`$`, `gg`/`G`, `Ctrl+D`/`Ctrl+U`), `x`, `dd`, `o`/`O`, and `:w`, `:w name`, `:wq`, `:q!`, `:bd`, `:enew`.
+- **Mouse everywhere.** Click tabs, close buttons, the `+` button, tree rows and the editor (places the cursor). The wheel scrolls whichever pane is under the pointer.
+- **Live preview.** Headings, checklists, callouts, code blocks and tables render as you type. Toggle it from the tabline or with `Space p`.
+- **Notion-style nesting.** A note can have sub-notes: `Project.md` plus a sibling `Project/` folder.
 
 ## Install
 
@@ -73,12 +73,12 @@ tsuzuri --version
 
 The workspace is picked in this order: `--dir`, then `$TSUZURI_WORKSPACE`, then the current directory. Hidden files and folders (names starting with `.`) are not shown. The debug log goes to your user cache directory (for example `~/Library/Caches/tsuzuri/tsuzuri.log` on macOS, `~/.cache/tsuzuri/tsuzuri.log` on Linux), never into your notes.
 
-### How pages map to files
+### How notes map to files
 
 ```text
 notes/
-├── Inbox.md                 page
-├── Project.md               page with sub-pages…
+├── Inbox.md                 note
+├── Project.md               note with sub-notes…
 ├── Project/                 …which live in this folder
 │   ├── Roadmap.md
 │   └── Meeting notes.md
@@ -86,72 +86,97 @@ notes/
     └── 2025.md
 ```
 
-Renaming a page renames both its file and its sub-page folder. Deleting a page removes its `.md` file; if it had sub-pages, its folder stays as a plain folder so nothing is lost.
+Only `.md` files are shown and written. Renaming a note also renames its sub-note folder. Deleting a note also deletes its sub-notes; Tsuzuri asks before deleting anything.
 
 ## Keybindings
 
-Press `Space` `h` or `?` inside the app for the cheatsheet.
+Leader is `Space`, as in NvChad. Press `?` or `Space h` in the app for the cheatsheet.
 
-### Dashboard
-
-| Key | Action |
-| :-- | :-- |
-| `n` | New page |
-| `f` / `Tab` | Open workspace (focus sidebar) |
-| `1`–`9` | Open recent page |
-| `j` / `k` | Move selection |
-| `Enter` | Run selected action |
-| `q` / `Ctrl+C` | Quit |
-
-### Global
+### Anywhere
 
 | Key | Action |
 | :-- | :-- |
-| `Tab` | Cycle focus: sidebar → editor → preview |
-| `Ctrl+B` | Toggle sidebar |
-| `Ctrl+N` | New page |
-| `Ctrl+D` | Back to dashboard |
+| `Ctrl+N` | New note (unsaved `Untitled-N` tab) |
+| `Ctrl+S` | Save; new notes open Save As |
+| `Ctrl+P` | Find a note |
+| `Ctrl+B` | Toggle explorer |
+| `Ctrl+C` | Quit (offers to save unsaved tabs) |
+
+### Normal mode / explorer / preview
+
+| Key | Action |
+| :-- | :-- |
+| `Tab` / `Shift+Tab` | Next / previous pane |
+| `Ctrl+H` / `Ctrl+L` | Pane to the left / right |
 | `[` / `]` | Previous / next tab |
-| `x` | Close tab (editor, NORMAL mode) |
-| `Space` `h` / `?` | Shortcut cheatsheet |
-| `Ctrl+C` | Quit |
+| `Space x` | Close tab |
+| `Space e` | Focus explorer |
+| `Space f` | Find a note |
+| `Space n` | New note |
+| `Space p` | Toggle preview |
+| `Space d` | Start screen |
+| `Space w` | Save |
 
-### Sidebar
+### Start screen
 
 | Key | Action |
 | :-- | :-- |
-| `j` / `k`, `↓` / `↑` | Move cursor |
-| `Enter` / `l` / `→` | Open page, or expand / collapse a folder |
-| `o` | Open a page that has sub-pages |
-| `h` / `←` | Collapse folder |
-| `z` / `Space` | Toggle expand / collapse |
-| `n` | New top-level page |
-| `a` | New sub-page under selection |
-| `r` / `e` | Rename (`Enter` confirm, `Esc` cancel) |
-| `d` / `x` | Delete |
-| `/` | Search (`Enter` / `Esc` to leave) |
+| `n` | New note |
+| `f` | Find note |
+| `e` | Open explorer |
+| `1`–`5` | Open recent note |
+| `j` / `k`, `Enter` | Move, select |
+| `q` | Quit |
+
+### Explorer
+
+| Key | Action |
+| :-- | :-- |
+| `j` / `k` | Move |
+| `Enter` / `l` | Open note, or expand / collapse folder |
+| `h` | Collapse, or jump to parent |
+| `o` | Open a note that has sub-notes |
+| `n` | New note in the selected folder |
+| `a` | New sub-note under the selection |
+| `r` | Rename (`Enter` confirm, `Esc` cancel) |
+| `d` | Delete (asks first) |
+| `/` | Search (`↑`/`↓` pick, `Enter` open, `Esc` cancel) |
+| `W` | Collapse all |
 
 ### Editor
 
 | Mode | Key | Action |
 | :-- | :-- | :-- |
-| NORMAL | `i` / `a` | Enter INSERT mode |
-| NORMAL | `:` | Enter COMMAND mode |
-| NORMAL | `j` / `k` | Move cursor |
+| NORMAL | `i` `a` `A` `I` | Insert at cursor / after / line end / line start |
+| NORMAL | `o` / `O` | Open line below / above |
+| NORMAL | `h` `j` `k` `l`, `w` `b`, `0` `$` | Move |
+| NORMAL | `gg` / `G` | Top / bottom |
+| NORMAL | `Ctrl+D` / `Ctrl+U`, `Ctrl+E` / `Ctrl+Y` | Scroll |
+| NORMAL | `x` / `dd` | Delete character / line |
 | INSERT | `Esc` | Back to NORMAL |
-| COMMAND | `:w` / `:write` | Save (a new page becomes a file here) |
+| COMMAND | `:w` | Save (Save As for new notes) |
+| COMMAND | `:w name`, `:saveas name` | Save under a new name (`folder/name` works) |
 | COMMAND | `:wq` / `:x` | Save and quit |
-| COMMAND | `:q` / `:quit` / `:q!` | Quit without saving |
-| COMMAND | `Esc` | Cancel |
+| COMMAND | `:q` / `:q!` | Quit / quit discarding changes |
+| COMMAND | `:bd` / `:bd!` | Close tab / discard and close |
+| COMMAND | `:enew` | New note |
+
+### Save As dialog
+
+| Key | Action |
+| :-- | :-- |
+| `Tab` | Switch between Folder and Name |
+| `↑` / `↓` | Choose a folder (typing filters; unknown folders are created) |
+| `Enter` | Save |
+| `Esc` | Cancel |
 
 ### Preview
 
 | Key | Action |
 | :-- | :-- |
 | `j` / `k` | Scroll one line |
-| `d` / `u`, `Ctrl+D` / `Ctrl+U` | Half-page down / up |
+| `d` / `u` | Half page |
 | `g` / `G` | Top / bottom |
-| Mouse wheel | Scroll |
 
 ## Development
 
@@ -168,13 +193,14 @@ Code layout:
 | :-- | :-- |
 | `cmd/tsuzuri` | Entry point, flags, workspace resolution |
 | `internal/core` | Filesystem-backed page store and app messages (no UI code) |
-| `internal/app` | Root model: layout, focus, keymap, tabs, drafts, modal |
-| `internal/dashboard` | Landing screen |
-| `internal/sidebar` | Page tree, search, inline rename |
-| `internal/content` | Vim editor and tab strip |
+| `internal/app` | Root model: layout, focus, keys, mouse, tabs/buffers, tabline, statusline, dialogs |
+| `internal/dashboard` | nvdash-style start screen |
+| `internal/sidebar` | nvim-tree style explorer, search, inline rename |
+| `internal/content` | Vim editor pane with breadcrumb winbar |
+| `internal/textarea` | Vendored bubbles textarea with scrolling and click-to-position additions |
 | `internal/preview` | Markdown compiler and preview viewport |
-| `internal/header` | Header bar |
-| `internal/theme` | Colors and styles |
+| `internal/ui` | Exact-size pane fitting and modal overlays |
+| `internal/theme` | NvChad onedark palette |
 
 ### Releasing
 

@@ -24,6 +24,15 @@ func TestSidebarComponent(t *testing.T) {
 	sb.SetPages(pages)
 	sb.SetFocused(true)
 
+	// Folders start collapsed, like nvim-tree; selecting a nested page
+	// reveals it.
+	for _, it := range sb.VisibleItems() {
+		if it.Page.Title == "Tasks (1)" {
+			t.Fatalf("expected child hidden while parent is collapsed")
+		}
+	}
+	sb.SetSelectedID("p2")
+
 	view := sb.View()
 	if !strings.Contains(view, "Code Turtle") {
 		t.Errorf("expected view to contain parent 'Code Turtle', got %q", view)
@@ -34,14 +43,12 @@ func TestSidebarComponent(t *testing.T) {
 	if strings.Contains(view, "RECENTS") {
 		t.Errorf("expected view NOT to contain RECENTS header, got %q", view)
 	}
-	if strings.Contains(view, "WORKSPACE") {
-		t.Errorf("expected view NOT to contain WORKSPACE header, got %q", view)
-	}
 	if !strings.Contains(view, "Search") {
 		t.Errorf("expected view to contain Search box, got %q", view)
 	}
 
 	// Test collapsing folder
+	sb.SetSelectedID("p1")
 	sb, _ = sb.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'z'}})
 	itemsAfterCollapse := sb.VisibleItems()
 	for _, it := range itemsAfterCollapse {

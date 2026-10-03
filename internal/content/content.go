@@ -1,48 +1,54 @@
-// Package content renders the active page view and Markdown editor (<Body/>).
+// Package content renders the Markdown editor pane (<Body/>): a winbar with the
+// note's path and a Vim-style editor underneath.
 package content
 
 import (
 	"strings"
 
 	"github.com/jaisuriya-11/tsuzuri/internal/core"
+	"github.com/jaisuriya-11/tsuzuri/internal/textarea"
 	"github.com/jaisuriya-11/tsuzuri/internal/theme"
+	"github.com/jaisuriya-11/tsuzuri/internal/ui"
 
-	"github.com/charmbracelet/bubbles/textarea"
+	"github.com/charmbracelet/bubbles/cursor"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
 
+// winbarHeight is the breadcrumb row above the text.
+const winbarHeight = 1
+
 // Model represents the Content component state.
 type Model struct {
-	theme         theme.Theme
-	pages         []core.Page
-	page          core.Page
-	textarea      textarea.Model
-	cmdInput      textinput.Model
-	mode          VimMode
-	statusMessage string
-	width         int
-	height        int
-	focused       bool
+	theme    theme.Theme
+	page     core.Page
+	draft    bool
+	textarea textarea.Model
+	cmdInput textinput.Model
+	mode     VimMode
+	pending  string // first key of a two-key Vim command ("g", "d")
+	width    int
+	height   int
+	focused  bool
 }
 
 // New constructs a Content Model.
 func New(th theme.Theme) Model {
 	ta := textarea.New()
-	ta.Placeholder = "Type Markdown text here..."
+	ta.Placeholder = "Start writing… (i to insert)"
 	ta.Prompt = ""
 	ta.ShowLineNumbers = true
-	ta.EndOfBufferCharacter = ' '
+	ta.EndOfBufferCharacter = '~'
 	ta.CharLimit = 0
-
+	ta.MaxHeight = 0
+	ta.Cursor.Style = lipgloss.NewStyle().Foreground(th.Fg)
 	configureTextareaStyles(&ta, th)
-	cmdInput := createCommandInput(th)
 
 	return Model{
 		theme:    th,
 		textarea: ta,
-		cmdInput: cmdInput,
+		cmdInput: createCommandInput(th),
 		mode:     ModeNormal,
 	}
 }
@@ -54,36 +60,25 @@ func (m Model) Init() tea.Cmd {
 
 // SetSize updates editor dimensions safely.
 func (m *Model) SetSize(w, h int) {
-	if w < 0 {
-		w = 0
-	}
-	if h < 0 {
-		h = 0
-	}
-	m.width = w
-	m.height = h
-
-	taWidth := w - 4
-	if taWidth < 10 {
-		taWidth = 10
-	}
-	taHeight := h - 2
-	if taHeight < 2 {
-		taHeight = 2
-	}
-	m.textarea.SetWidth(taWidth)
-	m.textarea.SetHeight(taHeight)
+	m.width = max(w, 0)
+	m.height = max(h, 0)
+	m.textarea.SetWidth(max(w-1, 10))
+	m.textarea.SetHeight(max(h-winbarHeight, 1))
 }
 
-// SetPage sets the page content to be edited.
+// SetPage loads a document into the editor. draft marks an unsaved buffer
+// that has no file yet.
 func (m *Model) SetPage(p core.Page) {
-	m.page = p
-	m.textarea.SetValue(p.Content)
+	m.SetBuffer(p, false)
 }
 
-// SetPages updates the list of open buffer pages for the tabufline.
-func (m *Model) SetPages(pages []core.Page) {
-	m.pages = pages
+// SetBuffer loads a buffer's text, resetting the cursor to the top.
+func (m *Model) SetBuffer(p core.Page, draft bool) {
+	m.page = p
+	m.draft = draft
+	m.pending = ""
+	m.textarea.SetValue(p.Content)
+	m.textarea.GotoTop()
 }
 
 // SetFocused sets focus state.
@@ -91,18 +86,28 @@ func (m *Model) SetFocused(focused bool) {
 	m.focused = focused
 	if !focused {
 		m.Blur()
+		if m.mode == ModeCommand {
+			m.mode = ModeNormal
+		}
 	}
 }
 
-// Focus focuses input depending on active mode.
+// Focus gives the editor keyboard focus in its current mode.
 func (m *Model) Focus() tea.Cmd {
 	m.focused = true
-	if m.mode == ModeInsert {
-		return m.textarea.Focus()
-	} else if m.mode == ModeCommand {
+	if m.mode == ModeCommand {
 		return m.cmdInput.Focus()
 	}
-	return nil
+	return m.focusTextarea()
+}
+
+func (m *Model) focusTextarea() tea.Cmd {
+	cmd := m.textarea.Focus()
+	cursorMode := cursor.CursorStatic
+	if m.mode == ModeInsert {
+		cursorMode = cursor.CursorBlink
+	}
+	return tea.Batch(cmd, m.textarea.Cursor.SetMode(cursorMode))
 }
 
 // Blur blurs inputs.
@@ -112,9 +117,7 @@ func (m *Model) Blur() {
 }
 
 // Mode returns the active Vim mode.
-func (m Model) Mode() VimMode {
-	return m.mode
-}
+func (m Model) Mode() VimMode { return m.mode }
 
 // ModeString returns the string representation of the active mode.
 func (m Model) ModeString() string {
@@ -129,200 +132,242 @@ func (m Model) ModeString() string {
 }
 
 // Value returns the current textarea content.
-func (m Model) Value() string {
-	return m.textarea.Value()
+func (m Model) Value() string { return m.textarea.Value() }
+
+// HasPage reports whether a document is loaded.
+func (m Model) HasPage() bool { return m.page.ID != "" }
+
+// CursorPosition returns the 1-based line and column of the cursor.
+func (m Model) CursorPosition() (int, int) { return m.textarea.CursorPosition() }
+
+// LineCount returns the number of lines in the buffer.
+func (m Model) LineCount() int { return m.textarea.LineCount() }
+
+// CommandView renders the ":" prompt for the command-line row.
+func (m Model) CommandView(width int) string {
+	m.cmdInput.Width = max(width-2, 1)
+	return m.cmdInput.View()
 }
 
-// Update processes Bubble Tea key events and handles Vim editing modes.
+// EnterInsert switches to INSERT mode (used by the app, e.g. for a new buffer).
+func (m *Model) EnterInsert() tea.Cmd {
+	m.mode = ModeInsert
+	if !m.focused {
+		return nil
+	}
+	return m.focusTextarea()
+}
+
+func (m *Model) enterInsert() tea.Cmd {
+	m.mode = ModeInsert
+	return m.focusTextarea()
+}
+
+func (m *Model) halfPage() int { return max(m.textarea.Height()/2, 1) }
+
+// ScrollBy scrolls the text by n lines, even while the pane is unfocused.
+func (m *Model) ScrollBy(n int) { m.textarea.ScrollBy(n) }
+
+// Update processes key and mouse messages (mouse coordinates relative to the
+// pane's top-left corner) and handles Vim editing modes.
 func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
-	var cmd tea.Cmd
+	if mouse, ok := msg.(tea.MouseMsg); ok {
+		return m.handleMouse(mouse)
+	}
+	if m.page.ID == "" {
+		return m, nil
+	}
 
 	switch m.mode {
-	case ModeNormal:
-		switch msg := msg.(type) {
-		case tea.KeyMsg:
-			m.statusMessage = ""
-			switch msg.String() {
-			case "i", "a":
-				m.mode = ModeInsert
-				m.textarea.Focus()
-				return m, textarea.Blink
-			case ":":
-				m.mode = ModeCommand
-				m.cmdInput.SetValue("")
-				m.cmdInput.Focus()
-				return m, textinput.Blink
-			case "j", "down":
-				m.textarea.CursorDown()
-				return m, nil
-			case "k", "up":
-				m.textarea.CursorUp()
-				return m, nil
-			}
-		}
-
 	case ModeInsert:
-		switch msg := msg.(type) {
-		case tea.KeyMsg:
-			if msg.String() == "esc" {
-				m.mode = ModeNormal
-				m.textarea.Blur()
-				return m, nil
-			}
+		if k, ok := msg.(tea.KeyMsg); ok && k.String() == "esc" {
+			m.mode = ModeNormal
+			m.textarea.CharLeft()
+			return m, m.focusTextarea()
 		}
+		var cmd tea.Cmd
 		m.textarea, cmd = m.textarea.Update(msg)
+		m.textarea.EnsureVisible()
 		return m, cmd
 
 	case ModeCommand:
-		switch msg := msg.(type) {
-		case tea.KeyMsg:
-			switch msg.String() {
+		k, ok := msg.(tea.KeyMsg)
+		if ok {
+			switch k.String() {
 			case "esc":
 				m.mode = ModeNormal
 				m.cmdInput.Blur()
-				return m, nil
+				return m, m.focusTextarea()
+			case "backspace":
+				if m.cmdInput.Value() == "" {
+					m.mode = ModeNormal
+					m.cmdInput.Blur()
+					return m, m.focusTextarea()
+				}
 			case "enter":
-				saveMsg, quitMsg, statusMsg, isSave, isQuit := parseVimCommand(m.cmdInput.Value())
+				out := parseVimCommand(m.cmdInput.Value(), m.textarea.Value())
 				m.mode = ModeNormal
 				m.cmdInput.Blur()
-				m.statusMessage = statusMsg
-
-				var cmds []tea.Cmd
-				if isSave {
-					contentVal := m.textarea.Value()
-					saveMsg.Content = contentVal
-					cmds = append(cmds, func() tea.Msg { return saveMsg })
+				focus := m.focusTextarea()
+				if out == nil {
+					return m, focus
 				}
-				if isQuit {
-					cmds = append(cmds, func() tea.Msg { return quitMsg })
-				}
-				return m, tea.Batch(cmds...)
+				return m, tea.Batch(focus, func() tea.Msg { return out })
 			}
 		}
+		var cmd tea.Cmd
 		m.cmdInput, cmd = m.cmdInput.Update(msg)
 		return m, cmd
 	}
 
+	k, ok := msg.(tea.KeyMsg)
+	if !ok {
+		return m, nil
+	}
+	return m.handleNormalKey(k)
+}
+
+func (m Model) handleNormalKey(k tea.KeyMsg) (Model, tea.Cmd) {
+	ta := &m.textarea
+	s := k.String()
+
+	if m.pending != "" {
+		combo := m.pending + s
+		m.pending = ""
+		switch combo {
+		case "gg":
+			ta.GotoTop()
+		case "dd":
+			ta.DeleteLine()
+		}
+		return m, nil
+	}
+
+	switch s {
+	case "i":
+		return m, m.enterInsert()
+	case "a":
+		ta.CharRight()
+		return m, m.enterInsert()
+	case "A":
+		ta.CursorEnd()
+		return m, m.enterInsert()
+	case "I":
+		ta.CursorStart()
+		return m, m.enterInsert()
+	case "o":
+		ta.OpenLineBelow()
+		return m, m.enterInsert()
+	case "O":
+		ta.OpenLineAbove()
+		return m, m.enterInsert()
+	case ":":
+		m.mode = ModeCommand
+		m.cmdInput.SetValue("")
+		m.textarea.Blur()
+		return m, m.cmdInput.Focus()
+
+	case "h", "left":
+		ta.CharLeft()
+	case "l", "right":
+		ta.CharRight()
+	case "j", "down", "enter":
+		ta.MoveCursorBy(1)
+	case "k", "up":
+		ta.MoveCursorBy(-1)
+	case "w":
+		ta.WordForward()
+	case "b":
+		ta.WordBackward()
+	case "0", "^", "home":
+		ta.CursorStart()
+	case "$", "end":
+		ta.CursorEnd()
+	case "G":
+		ta.GotoBottom()
+	case "g", "d":
+		m.pending = s
+	case "ctrl+d":
+		ta.ScrollBy(m.halfPage())
+		ta.MoveCursorBy(m.halfPage())
+	case "ctrl+u":
+		ta.ScrollBy(-m.halfPage())
+		ta.MoveCursorBy(-m.halfPage())
+	case "pgdown", "ctrl+f":
+		ta.MoveCursorBy(ta.Height())
+	case "pgup", "ctrl+b":
+		ta.MoveCursorBy(-ta.Height())
+	case "ctrl+e":
+		ta.ScrollBy(1)
+	case "ctrl+y":
+		ta.ScrollBy(-1)
+	case "x", "delete":
+		ta.DeleteCharForward()
+	}
 	return m, nil
 }
 
-// View renders the content editor layout safely with NvChad-style tabufline across the top.
+func (m Model) handleMouse(msg tea.MouseMsg) (Model, tea.Cmd) {
+	if m.page.ID == "" {
+		return m, nil
+	}
+	switch msg.Button {
+	case tea.MouseButtonWheelUp:
+		m.textarea.ScrollBy(-3)
+		return m, nil
+	case tea.MouseButtonWheelDown:
+		m.textarea.ScrollBy(3)
+		return m, nil
+	case tea.MouseButtonLeft:
+		if msg.Action == tea.MouseActionPress && msg.Y >= winbarHeight {
+			m.textarea.ClickAt(msg.X, msg.Y-winbarHeight)
+		}
+	}
+	return m, nil
+}
+
+// winbar renders the breadcrumb row: folder › folder › file.md.
+func (m Model) winbar() string {
+	th := m.theme
+	sep := lipgloss.NewStyle().Foreground(th.Grey).Render(" › ")
+	dirStyle := lipgloss.NewStyle().Foreground(th.GreyFg2)
+	fileStyle := lipgloss.NewStyle().Foreground(th.Fg).Bold(true)
+	icon := lipgloss.NewStyle().Foreground(th.NordBlue).Render(" ")
+
+	var parts []string
+	if m.draft {
+		name := m.page.Title
+		parts = append(parts, icon+fileStyle.Render(name)+lipgloss.NewStyle().Foreground(th.Yellow).Render("  unsaved"))
+	} else {
+		segs := strings.Split(m.page.ID, "/")
+		for _, d := range segs[:len(segs)-1] {
+			parts = append(parts, dirStyle.Render(d))
+		}
+		parts = append(parts, icon+fileStyle.Render(segs[len(segs)-1]))
+	}
+	return " " + strings.Join(parts, sep)
+}
+
+// View renders the editor at exactly width × height.
 func (m Model) View() string {
 	if m.width <= 0 || m.height <= 0 {
 		return ""
 	}
-
-	m.SetSize(m.width, m.height)
-
-	border := m.theme.Border
-	if m.focused {
-		border = m.theme.BorderFocus
-	}
+	plain := lipgloss.NewStyle()
 
 	if m.page.ID == "" {
-		msg := lipgloss.NewStyle().
-			Italic(true).
-			Foreground(m.theme.MutedFg).
-			Render(" No page open — press n to create one")
-		placeholder := lipgloss.Place(m.width-2, m.height, lipgloss.Center, lipgloss.Center, msg)
-		return lipgloss.NewStyle().
-			Width(m.width-1).
-			Height(m.height).
-			MaxHeight(m.height).
-			BorderStyle(lipgloss.NormalBorder()).
-			BorderRight(true).
-			BorderForeground(border).
-			Padding(0, 1).
-			Render(placeholder)
+		th := m.theme
+		lines := []string{
+			lipgloss.NewStyle().Foreground(th.Grey).Render("󰠮"),
+			"",
+			lipgloss.NewStyle().Foreground(th.GreyFg2).Bold(true).Render("No note open"),
+			"",
+			lipgloss.NewStyle().Foreground(th.GreyFg).Render("Ctrl+N  new note    /  search    Tab  explorer"),
+		}
+		block := lipgloss.JoinVertical(lipgloss.Center, lines...)
+		return ui.Fit(lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, block), m.width, m.height, plain)
 	}
 
-	// Build a VSCode-style tab strip across the top of the editor: only pages
-	// the user actually opened appear here, each with a close affordance
-	// ('x' closes the active tab, VSCode-style) and a dirty dot when unsaved.
-	var tabs []string
-	pagesToRender := m.pages
-	if len(pagesToRender) == 0 && m.page.ID != "" {
-		pagesToRender = []core.Page{m.page}
-	}
-
-	tabActiveStyle := lipgloss.NewStyle().
-		Bold(true).
-		Foreground(m.theme.DarkFg).
-		Background(m.theme.SidebarBg).
-		Padding(0, 1)
-
-	tabInactiveStyle := lipgloss.NewStyle().
-		Foreground(m.theme.MutedFg).
-		Background(lipgloss.Color("#181b21")).
-		Padding(0, 1)
-
-	currentTotalWidth := 0
-	maxTabsWidth := m.width - 4
-	if maxTabsWidth < 10 {
-		maxTabsWidth = 10
-	}
-
-	for _, p := range pagesToRender {
-		tabTitle := p.Title
-		if tabTitle == "" {
-			tabTitle = "Untitled"
-		}
-		if strings.HasSuffix(p.ID, ".md") {
-			tabTitle += ".md"
-		}
-
-		var tabStr string
-		if p.ID == m.page.ID {
-			dirty := ""
-			if m.textarea.Value() != m.page.Content {
-				dirty = " ●"
-			}
-			tabStr = tabActiveStyle.Render(" " + tabTitle + dirty + "  ")
-		} else {
-			tabStr = tabInactiveStyle.Render(" " + tabTitle + "  ")
-		}
-
-		tabW := lipgloss.Width(tabStr)
-		if currentTotalWidth+tabW > maxTabsWidth && len(tabs) > 0 {
-			break
-		}
-		tabs = append(tabs, tabStr)
-		currentTotalWidth += tabW + 1
-	}
-
-	var titleView string
-	if len(tabs) > 0 {
-		titleView = strings.Join(tabs, " ")
-	} else {
-		title := m.page.Title
-		if title == "" {
-			title = "Untitled"
-		}
-		if strings.HasSuffix(m.page.ID, ".md") {
-			title += ".md"
-		}
-		titleView = tabActiveStyle.Render(" " + title)
-	}
-
-	editorView := m.textarea.View()
-
-	var inner string
-	if m.mode == ModeCommand {
-		inner = lipgloss.JoinVertical(lipgloss.Left, titleView, editorView, m.cmdInput.View())
-	} else if m.statusMessage != "" {
-		statusMsg := lipgloss.NewStyle().Foreground(m.theme.NormalBg).Render(m.statusMessage)
-		inner = lipgloss.JoinVertical(lipgloss.Left, titleView, editorView, statusMsg)
-	} else {
-		inner = lipgloss.JoinVertical(lipgloss.Left, titleView, editorView)
-	}
-
-	return lipgloss.NewStyle().
-		Width(m.width-1).
-		Height(m.height).
-		MaxHeight(m.height).
-		BorderStyle(lipgloss.NormalBorder()).
-		BorderRight(true).
-		BorderForeground(border).
-		Padding(0, 1).
-		Render(inner)
+	body := ui.Fit(m.textarea.View(), m.width, m.height-winbarHeight, plain)
+	return ui.FitLine(m.winbar(), m.width, plain) + "\n" + body
 }

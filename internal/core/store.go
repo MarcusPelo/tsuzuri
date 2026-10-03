@@ -435,3 +435,117 @@ func (s *Store) Delete(id string) error {
 	}
 	return nil
 }
+
+// Dirs returns every non-hidden directory in the workspace as a
+// slash-separated path relative to the root, sorted case-insensitively. The
+// root itself is represented by "".
+func (s *Store) Dirs() []string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	dirs := []string{""}
+	_ = filepath.WalkDir(s.root, func(p string, d os.DirEntry, err error) error {
+		if err != nil || !d.IsDir() || p == s.root {
+			return nil
+		}
+		if strings.HasPrefix(d.Name(), ".") {
+			return filepath.SkipDir
+		}
+		rel, relErr := filepath.Rel(s.root, p)
+		if relErr != nil {
+			return nil
+		}
+		dirs = append(dirs, filepath.ToSlash(rel))
+		return nil
+	})
+	sort.Slice(dirs, func(i, j int) bool { return strings.ToLower(dirs[i]) < strings.ToLower(dirs[j]) })
+	return dirs
+}
+
+// ChildDir returns the directory (relative to the root) where new children of
+// parentID live: the root, a plain folder, or a page's sidecar folder. Unknown
+// parents resolve to the root.
+func (s *Store) ChildDir(parentID string) string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	dir, err := s.childDirFor(parentID)
+	if err != nil {
+		return ""
+	}
+	return dir
+}
+
+// NormalizeNotePath cleans a user-supplied relative note path and forces the
+// ".md" extension (Tsuzuri only ever writes Markdown). It rejects absolute
+// paths, hidden segments and anything that would escape the workspace.
+func NormalizeNotePath(dir, name string) (string, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return "", errors.New("file name is empty")
+	}
+	if strings.ContainsAny(name, "/\\\x00") {
+		return "", errors.New("file name cannot contain / or \\")
+	}
+	if !strings.HasSuffix(strings.ToLower(name), mdExt) {
+		name += mdExt
+	} else {
+		name = name[:len(name)-len(mdExt)] + mdExt
+	}
+	if strings.TrimSuffix(name, mdExt) == "" {
+		return "", errors.New("file name is empty")
+	}
+
+	dir = strings.Trim(strings.TrimSpace(filepath.ToSlash(dir)), "/")
+	rel := path.Clean(path.Join(dir, name))
+	if path.IsAbs(rel) || rel == ".." || strings.HasPrefix(rel, "../") {
+		return "", errors.New("location must be inside the workspace")
+	}
+	for _, seg := range strings.Split(rel, "/") {
+		if strings.HasPrefix(seg, ".") {
+			return "", errors.New("hidden files and folders are not allowed")
+		}
+	}
+	return rel, nil
+}
+
+// SaveAs writes content to a new note at dir/name (".md" is added if
+// missing), creating any missing folders. It refuses to overwrite an
+// existing file.
+func (s *Store) SaveAs(dir, name, content string) (Page, error) {
+	rel, err := NormalizeNotePath(dir, name)
+	if err != nil {
+		return Page{}, err
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	abs := s.idToAbs(rel)
+	if fileExists(abs) {
+		return Page{}, fmt.Errorf("%s already exists", rel)
+	}
+	if err := os.MkdirAll(filepath.Dir(abs), 0755); err != nil {
+		return Page{}, fmt.Errorf("failed to create folder: %w", err)
+	}
+	if err := os.WriteFile(abs, []byte(content), 0644); err != nil {
+		return Page{}, fmt.Errorf("failed to save page: %w", err)
+	}
+	return Page{
+		ID:        rel,
+		Title:     strings.TrimSuffix(path.Base(rel), mdExt),
+		Content:   content,
+		ParentID:  parentIDFor(s.root, rel),
+		UpdatedAt: modTime(abs),
+	}, nil
+}
+
+// Rename changes a page's or folder's name on disk without touching its
+// content (Update would overwrite the file with p.Content).
+func (s *Store) Rename(id, newTitle string) (Page, error) {
+	p, err := s.Get(id)
+	if err != nil {
+		return Page{}, err
+	}
+	p.Title = strings.TrimSuffix(strings.TrimSpace(newTitle), mdExt)
+	return s.Update(p)
+}

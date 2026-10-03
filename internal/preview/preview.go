@@ -2,9 +2,11 @@ package preview
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/jaisuriya-11/tsuzuri/internal/core"
 	"github.com/jaisuriya-11/tsuzuri/internal/theme"
+	"github.com/jaisuriya-11/tsuzuri/internal/ui"
 
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
@@ -38,34 +40,13 @@ func New(th theme.Theme) Model {
 
 // SetSize updates the layout dimensions for the preview pane and viewport.
 func (m *Model) SetSize(w, h int) {
-	if w < 0 {
-		w = 0
-	}
-	if h < 0 {
-		h = 0
-	}
-	m.width = w
-	m.height = h
+	m.width = max(w, 0)
+	m.height = max(h, 0)
 
-	vpWidth := w - 2
-	if vpWidth < 10 {
-		vpWidth = 10
-	}
-
-	// 1 line for header tab
-	vpHeight := h - 1
-	if vpHeight < 2 {
-		vpHeight = 2
-	}
-
-	m.viewport.Width = vpWidth
-	m.viewport.Height = vpHeight
-
-	if !m.ready {
-		m.ready = true
-	}
-
-	// Recompile with the new width
+	// One column of left padding plus the winbar row.
+	m.viewport.Width = max(w-2, 10)
+	m.viewport.Height = max(h-1, 1)
+	m.ready = true
 	m.recompile()
 }
 
@@ -120,63 +101,76 @@ func (m *Model) recompile() {
 	m.viewport.SetContent(compiled)
 }
 
-// Update processes Bubble Tea events for scrolling the preview.
+// ScrollBy scrolls the preview by n lines (negative scrolls up).
+func (m *Model) ScrollBy(n int) {
+	if n > 0 {
+		m.viewport.ScrollDown(n)
+	} else {
+		m.viewport.ScrollUp(-n)
+	}
+}
+
+// Update processes key and mouse events for scrolling the preview.
 func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
-	var cmd tea.Cmd
 	switch msg := msg.(type) {
+	case tea.MouseMsg:
+		switch msg.Button {
+		case tea.MouseButtonWheelUp:
+			m.ScrollBy(-3)
+		case tea.MouseButtonWheelDown:
+			m.ScrollBy(3)
+		}
+		return m, nil
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "j", "down":
-			m.viewport.LineDown(1)
-			return m, nil
+			m.viewport.ScrollDown(1)
 		case "k", "up":
-			m.viewport.LineUp(1)
-			return m, nil
+			m.viewport.ScrollUp(1)
 		case "d", "ctrl+d":
 			m.viewport.HalfPageDown()
-			return m, nil
 		case "u", "ctrl+u":
 			m.viewport.HalfPageUp()
-			return m, nil
-		case "g":
+		case "pgdown", "ctrl+f", " ":
+			m.viewport.PageDown()
+		case "pgup", "ctrl+b":
+			m.viewport.PageUp()
+		case "g", "home":
 			m.viewport.GotoTop()
-			return m, nil
-		case "G":
+		case "G", "end":
 			m.viewport.GotoBottom()
-			return m, nil
 		}
 	}
-
-	m.viewport, cmd = m.viewport.Update(msg)
-	return m, cmd
+	return m, nil
 }
 
-// View renders the compiled Markdown live preview pane.
+// View renders the compiled Markdown preview at exactly width × height.
 func (m Model) View() string {
 	if m.width <= 0 || m.height <= 0 {
 		return ""
 	}
+	th := m.theme
+	plain := lipgloss.NewStyle()
 
-	tabStyle := lipgloss.NewStyle().
-		Bold(true).
-		Foreground(m.theme.DarkFg).
-		Background(m.theme.CommandBg).
-		Padding(0, 1)
-
-	headerTab := tabStyle.Render("󰈈 preview")
-
-	vpView := m.viewport.View()
-	if m.pageID == "" {
-		placeholder := lipgloss.NewStyle().Italic(true).Foreground(m.theme.MutedFg).Render("Nothing to preview")
-		vpView = lipgloss.Place(m.viewport.Width, m.viewport.Height, lipgloss.Center, lipgloss.Center, placeholder)
+	label := lipgloss.NewStyle().Foreground(th.Yellow).Render(" 󰈈 ") +
+		lipgloss.NewStyle().Foreground(th.GreyFg2).Render("Preview")
+	if m.pageID != "" {
+		pos := lipgloss.NewStyle().Foreground(th.GreyFg).Render(m.ScrollStatus() + " ")
+		gap := m.width - lipgloss.Width(label) - lipgloss.Width(pos)
+		label += strings.Repeat(" ", max(gap, 1)) + pos
 	}
 
-	inner := lipgloss.JoinVertical(lipgloss.Left, headerTab, vpView)
-
-	return lipgloss.NewStyle().
-		Width(m.width).
-		Height(m.height).
-		MaxHeight(m.height).
-		Padding(0, 1).
-		Render(inner)
+	var body string
+	if m.pageID == "" {
+		msg := lipgloss.NewStyle().Foreground(th.GreyFg).Render("Nothing to preview")
+		body = lipgloss.Place(m.width, m.height-1, lipgloss.Center, lipgloss.Center, msg)
+	} else {
+		body = ui.Fit(m.viewport.View(), m.width-2, m.height-1, plain)
+		lines := strings.Split(body, "\n")
+		for i, l := range lines {
+			lines[i] = " " + l + " "
+		}
+		body = strings.Join(lines, "\n")
+	}
+	return ui.FitLine(label, m.width, plain) + "\n" + ui.Fit(body, m.width, m.height-1, plain)
 }

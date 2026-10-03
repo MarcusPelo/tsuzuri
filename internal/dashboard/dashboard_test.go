@@ -3,6 +3,7 @@ package dashboard_test
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jaisuriya-11/tsuzuri/internal/core"
 	"github.com/jaisuriya-11/tsuzuri/internal/dashboard"
@@ -14,57 +15,61 @@ import (
 func TestDashboardComponent(t *testing.T) {
 	th := theme.DefaultTheme()
 	db := dashboard.New(th)
-	db.SetSize(100, 30)
+	db.SetSize(100, 40)
 
+	now := time.Now()
 	pages := []core.Page{
-		{ID: "p1", Title: "Intro Document"},
-		{ID: "p2", Title: "Todo List"},
+		{ID: "p1.md", Title: "Intro Document", UpdatedAt: now.Add(-time.Hour)},
+		{ID: "work/p2.md", Title: "Todo List", UpdatedAt: now},
+		{ID: "work", Title: "work", IsFolder: true},
 	}
 	db.SetRecentPages(pages)
 
 	view := db.View()
-	if !strings.Contains(view, "New Document") {
-		t.Errorf("expected view to contain 'New Document', got %q", view)
+	for _, want := range []string{"New Note", "Find Note", "Intro Document.md", "Todo List.md", "2 notes"} {
+		if !strings.Contains(view, want) {
+			t.Errorf("expected view to contain %q, got %q", want, view)
+		}
 	}
-	if !strings.Contains(view, "Intro Document") {
-		t.Errorf("expected view to contain recent page 'Intro Document', got %q", view)
-	}
-	if !strings.Contains(view, "Todo List") {
-		t.Errorf("expected view to contain recent page 'Todo List', got %q", view)
-	}
-
-	// Default selection is New Document
-	if db.SelectedAction() != dashboard.ActionNewPage {
-		t.Errorf("expected default action to be ActionNewPage, got %v", db.SelectedAction())
+	if got := strings.Count(view, "\n") + 1; got != 40 {
+		t.Errorf("expected exactly 40 rows, got %d", got)
 	}
 
-	// Move cursor down
-	updated, _ := db.Update(tea.KeyMsg{Type: tea.KeyDown})
-	db = updated
-	if db.SelectedAction() != dashboard.ActionBrowse {
-		t.Errorf("expected action after down to be ActionBrowse, got %v", db.SelectedAction())
+	// Most recently edited note comes first.
+	if recent := db.RecentPages(); len(recent) != 2 || recent[0].ID != "work/p2.md" {
+		t.Errorf("expected newest note first, got %v", recent)
 	}
 
-	// Move cursor down again
-	updated, _ = db.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
-	db = updated
-	if db.SelectedAction() != dashboard.ActionQuit {
-		t.Errorf("expected action after j to be ActionQuit, got %v", db.SelectedAction())
+	if a, _ := db.SelectedAction(); a != dashboard.ActionNewPage {
+		t.Errorf("expected default action ActionNewPage, got %v", a)
 	}
+	db, _ = db.Update(tea.KeyMsg{Type: tea.KeyDown})
+	if a, _ := db.SelectedAction(); a != dashboard.ActionFind {
+		t.Errorf("expected ActionFind after down, got %v", a)
+	}
+	db, _ = db.Update(tea.KeyMsg{Type: tea.KeyUp})
+	db, _ = db.Update(tea.KeyMsg{Type: tea.KeyUp})
+	if a, id := db.SelectedAction(); a != dashboard.ActionOpenRecent || id != "p1.md" {
+		t.Errorf("expected wrap-around to last recent note, got %v %q", a, id)
+	}
+}
 
-	// Move cursor down at bottom (clamping check)
-	updated, _ = db.Update(tea.KeyMsg{Type: tea.KeyDown})
-	db = updated
-	if db.SelectedAction() != dashboard.ActionQuit {
-		t.Errorf("expected action to stay ActionQuit at bottom clamp, got %v", db.SelectedAction())
-	}
+func TestDashboardClick(t *testing.T) {
+	db := dashboard.New(theme.DefaultTheme())
+	db.SetSize(100, 40)
+	db.SetRecentPages(nil)
 
-	// Move cursor up
-	updated, _ = db.Update(tea.KeyMsg{Type: tea.KeyUp})
-	db = updated
-	if db.SelectedAction() != dashboard.ActionBrowse {
-		t.Errorf("expected action after up to be ActionBrowse, got %v", db.SelectedAction())
+	lines := strings.Split(db.View(), "\n")
+	for y, l := range lines {
+		if x := strings.Index(l, "Quit"); x >= 0 {
+			a, _, ok := db.Click(len([]rune(l[:x])), y)
+			if !ok || a != dashboard.ActionQuit {
+				t.Fatalf("clicking Quit gave %v, %v", a, ok)
+			}
+			return
+		}
 	}
+	t.Fatal("Quit button not rendered")
 }
 
 func TestDashboardZeroSize(t *testing.T) {

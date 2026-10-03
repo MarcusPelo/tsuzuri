@@ -6,6 +6,27 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- NvChad onedark look: nvdash start screen, nvim-tree explorer with indent
+  guides, buffer tabline, statusline with mode, file, folder, words and cursor.
+- Save As dialog for new notes: choose a folder from a list (or type a new
+  one) and a name; `.md` is enforced. `:w name` and `:saveas` too.
+- Unsaved buffers kept per tab; prompts before closing a dirty tab, quitting
+  with unsaved work (Save All) and deleting files.
+- Mouse: clickable tabs, close and `+` buttons, explorer rows, click to place
+  the cursor; wheel scrolls the pane under the pointer.
+- Vim motions in NORMAL mode (`w b 0 $ gg G Ctrl+D/U Ctrl+E/Y x dd o O A I`).
+- Space-leader shortcuts, `Ctrl+S`, `Ctrl+P`, preview toggle.
+
+### Fixed
+- Files longer than 99 lines were truncated on load (and the rest lost on save).
+- Renaming a note from the explorer erased its content.
+- Line numbers of 100+ broke the editor layout.
+- Editor only scrolled while typing; now scrolls with motions and the wheel.
+- Explorer search box borders were misaligned; panes could overflow and break
+  the divider lines.
+- Switching tabs discarded unsaved edits.
+
 ## [0.1.0] - 2026-10-03
 
 First public release.
