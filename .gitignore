@@ -21,3 +21,7 @@ dist/
 
 # Release artifacts
 dist/
+
+# Local test notes
+/main.md
+/assets/
