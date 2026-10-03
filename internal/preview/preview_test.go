@@ -129,7 +129,7 @@ func TestViewBlocks(t *testing.T) {
 	cases := map[string][]string{
 		"```board\n## Todo\n- A\n## Done\n- B\n```":                                     {"● Todo", "● Done", "A", "B", "+ New page"},
 		"```calendar\nmonth: 2026-10\n2026-10-15: Launch\n```":                          {"October 2026", "Sun", "Sat", "Laun", "31"},
-		"```timeline\nAlpha: 2026-10-01 -> 2026-10-04\n```":                             {"Alpha", "October"},
+		"```timeline\nAlpha: 2026-10-01 -> 2026-10-04\n```":                             {"Alpha", "Oct 2026"},
 		"```chart\ntype: bar\ntitle: Sales\nJan: 3\nFeb: 6\n```":                        {"Sales", "Jan", "Feb", "█"},
 		"```chart\ntype: hbar\nGo: 5\nRust: 2\n```":                                     {"Go", "Rust", "█"},
 		"```chart\ntype: line\nA: 1\nB: 5\nC: 2\n```":                                   {"┤", "A", "C"},
@@ -162,5 +162,26 @@ func TestBoardCardDescriptions(t *testing.T) {
 	}
 	if strings.Contains(plain, "● In progress  3") {
 		t.Errorf("a description line must not count as a card:\n%s", plain)
+	}
+}
+
+func TestTimelineFitsLongRanges(t *testing.T) {
+	src := "```timeline\nCard 1: 2026-09-30 -> 2026-10-05\nCard 2: 2026-10-03 -> 2026-10-07\nCard 3: 2026-02-01 -> 2026-10-02\n```"
+	for _, w := range []int{40, 60, 100} {
+		out := preview.Compile(src, theme.DefaultTheme(), w)
+		plain := ansi.Strip(out)
+		for _, want := range []string{"Card 1", "Card 2", "Card 3", "Feb 2026", "Oct"} {
+			if !strings.Contains(plain, want) {
+				t.Errorf("width %d: missing %q in\n%s", w, want, plain)
+			}
+		}
+		for _, l := range strings.Split(out, "\n") {
+			if ansi.StringWidth(l) > w {
+				t.Errorf("width %d: line too wide (%d): %q", w, ansi.StringWidth(l), ansi.Strip(l))
+			}
+		}
+		if strings.Contains(plain, "1011") || strings.Contains(plain, "3031") {
+			t.Errorf("width %d: day numbers ran together:\n%s", w, plain)
+		}
 	}
 }
