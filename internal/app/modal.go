@@ -19,7 +19,7 @@ var keymapSections = [][]keymapSection{
 		{"󰕭 GENERAL", [][2]string{
 			{"Ctrl+N", "New note (unsaved tab)"},
 			{"Ctrl+S", "Save (new notes: pick folder)"},
-			{"Ctrl+P", "Find note (opens in this tab)"},
+			{"\\ / Ctrl+P", "Find note (opens in this tab)"},
 			{"Ctrl+B", "Toggle explorer"},
 			{"Tab", "Next pane"},
 			{"[ / ]", "Previous / next tab"},
@@ -37,7 +37,7 @@ var keymapSections = [][]keymapSection{
 			{"a", "New sub-note"},
 			{"r", "Rename"},
 			{"d", "Delete (asks first)"},
-			{"/", "Find note"},
+			{"\\", "Find note"},
 		}},
 	},
 	{
@@ -50,6 +50,7 @@ var keymapSections = [][]keymapSection{
 			{"gg / G", "Top / bottom"},
 			{"Ctrl+D/U", "Half page down / up"},
 			{"x / dd", "Delete char / line"},
+			{"/ (insert)", "Block menu: headings, lists…"},
 		}},
 		{" COMMANDS", [][2]string{
 			{":w", "Save"},

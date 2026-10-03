@@ -103,7 +103,7 @@ func TestSidebarEditableElements(t *testing.T) {
 	}
 }
 
-func TestSidebarSlashOpensFinderAndClickKeepsFocus(t *testing.T) {
+func TestSidebarBackslashOpensFinderAndClickKeepsFocus(t *testing.T) {
 	sb := sidebar.New(theme.DefaultTheme())
 	sb.SetSize(28, 25)
 	sb.SetPages([]core.Page{
@@ -112,12 +112,12 @@ func TestSidebarSlashOpensFinderAndClickKeepsFocus(t *testing.T) {
 	})
 	sb.SetFocused(true)
 
-	_, cmd := sb.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	_, cmd := sb.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'\\'}})
 	if cmd == nil {
-		t.Fatal("expected a command from '/'")
+		t.Fatal("expected a command from '\\'")
 	}
 	if _, ok := cmd().(core.FindRequestMsg); !ok {
-		t.Fatal("expected '/' to request the global finder")
+		t.Fatal("expected '\\' to request the global finder")
 	}
 
 	// Rows start at y=4 (title, spacer, find button, spacer). Click b.md.

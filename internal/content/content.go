@@ -23,6 +23,7 @@ type Model struct {
 	cmdInput textinput.Model
 	mode     VimMode
 	pending  string // first key of a two-key Vim command ("g", "d")
+	slash    *slashMenu
 	width    int
 	height   int
 	focused  bool
@@ -85,6 +86,7 @@ func (m *Model) SetBuffer(p core.Page, draft bool) {
 	m.page = p
 	m.draft = draft
 	m.pending = ""
+	m.slash = nil
 	m.textarea.SetValue(p.Content)
 	m.textarea.GotoTop()
 }
@@ -93,6 +95,7 @@ func (m *Model) SetBuffer(p core.Page, draft bool) {
 func (m *Model) SetFocused(focused bool) {
 	m.focused = focused
 	if !focused {
+		m.slash = nil
 		m.Blur()
 		if m.mode == ModeCommand {
 			m.mode = ModeNormal
@@ -171,6 +174,7 @@ func (m *Model) ExitInsert() {
 	if m.mode == ModeInsert {
 		m.mode = ModeNormal
 	}
+	m.slash = nil
 }
 
 func (m *Model) enterInsert() tea.Cmd {
@@ -198,7 +202,13 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 
 	switch m.mode {
 	case ModeInsert:
-		if k, ok := msg.(tea.KeyMsg); ok && k.String() == "esc" {
+		k, isKey := msg.(tea.KeyMsg)
+		if isKey && m.slash != nil {
+			if cmd, handled := m.updateSlash(k); handled {
+				return m, cmd
+			}
+		}
+		if isKey && k.String() == "esc" {
 			m.mode = ModeNormal
 			m.textarea.CharLeft()
 			return m, m.focusTextarea()
@@ -206,6 +216,13 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		var cmd tea.Cmd
 		m.textarea, cmd = m.textarea.Update(msg)
 		m.textarea.EnsureVisible()
+		if isKey {
+			if m.slash != nil {
+				m.afterSlashKey()
+			} else {
+				m.maybeOpenSlash(k)
+			}
+		}
 		return m, cmd
 
 	case ModeCommand:
@@ -337,6 +354,11 @@ func (m Model) handleMouse(msg tea.MouseMsg) (Model, tea.Cmd) {
 		m.textarea.ScrollBy(3)
 		return m, nil
 	case tea.MouseButtonLeft:
+		if m.slash != nil && msg.Action == tea.MouseActionPress {
+			if cmd, hit := m.clickSlash(msg.X, msg.Y); hit {
+				return m, cmd
+			}
+		}
 		if msg.Action == tea.MouseActionPress {
 			m.textarea.ClickAt(msg.X, msg.Y)
 		}

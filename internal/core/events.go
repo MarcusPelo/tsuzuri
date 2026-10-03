@@ -54,6 +54,12 @@ type StatusMsg struct {
 	Error bool
 }
 
+// SlashActionMsg is emitted by "/" menu entries the app must handle:
+// "page" (new sub-note) and "link" (pick a note to link to).
+type SlashActionMsg struct {
+	Action string
+}
+
 // ThemeMsg switches the colour theme (":colorscheme name"). An empty Name
 // opens the theme picker.
 type ThemeMsg struct {

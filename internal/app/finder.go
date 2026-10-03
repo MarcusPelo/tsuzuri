@@ -2,6 +2,7 @@ package app
 
 import (
 	"fmt"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -28,6 +29,7 @@ type finder struct {
 	sel     int
 	offset  int
 	lines   map[string][]string // note text, split into lines
+	link    bool                // pick a note to link to instead of opening it
 }
 
 // maxTextHits caps text matches so huge workspaces stay responsive.
@@ -216,6 +218,11 @@ func (m *Model) finderOpen(f *finder, newTab bool) tea.Cmd {
 	if !ok {
 		return nil
 	}
+	if f.link {
+		m.finder = nil
+		m.insertLinkTo(p)
+		return m.focusPane(focusEditor)
+	}
 	line := f.matches[f.sel].line
 	m.finder = nil
 	var cmd tea.Cmd
@@ -310,7 +317,7 @@ func (f *finder) view(m *Model) (string, int, int) {
 	rows := make([]string, 0, g.innerHeight)
 
 	// Title + count.
-	title := bg.Foreground(th.Blue).Render(" 󰍉 ") + bg.Foreground(th.Fg).Bold(true).Render("Find Note") + bg.Foreground(th.GreyFg2).Render("  in "+f.root+"/")
+	title := bg.Foreground(th.Blue).Render(" 󰍉 ") + bg.Foreground(th.Fg).Bold(true).Render(f.title()) + bg.Foreground(th.GreyFg2).Render("  in "+f.root+"/")
 	count := bg.Foreground(th.GreyFg2).Render(fmt.Sprintf("%d results · %d notes ", len(f.matches), len(f.notes)))
 	rows = append(rows, title+bg.Render(strings.Repeat(" ", max(inner-lipgloss.Width(title)-lipgloss.Width(count), 0)))+count)
 
@@ -498,4 +505,42 @@ func (f *finder) textRow(th theme.Theme, mt finderMatch, base, hit lipgloss.Styl
 		line = ui.FitLine(line, width-1, base) + base.Foreground(th.GreyFg).Render("…")
 	}
 	return ui.FitLine(line, width, base)
+}
+
+func (f *finder) title() string {
+	if f.link {
+		return "Link to Note"
+	}
+	return "Find Note"
+}
+
+// openLinkPicker reuses the finder to choose a note for "/ Link to page".
+func (m *Model) openLinkPicker() tea.Cmd {
+	cmd := m.openFinder()
+	m.finder.link = true
+	return cmd
+}
+
+// insertLinkTo writes a Markdown link to target, relative to the note being
+// edited, at the editor cursor.
+func (m *Model) insertLinkTo(target core.Page) {
+	b := m.activeBuffer()
+	if b == nil {
+		return
+	}
+	from := b.dir
+	if !b.draft() {
+		from = path.Dir(b.id)
+	}
+	rel, err := filepath.Rel(filepath.FromSlash(from), filepath.FromSlash(target.ID))
+	if err != nil {
+		rel = target.ID
+	}
+	link := filepath.ToSlash(rel)
+	if strings.ContainsAny(link, " ()") {
+		link = "<" + link + ">"
+	}
+	m.content.InsertText("[" + target.Title + "](" + link + ")")
+	m.preview.SetContent(m.content.Value())
+	m.refreshModified()
 }

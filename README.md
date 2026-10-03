@@ -31,6 +31,7 @@
 - **Mouse everywhere.** Click tabs, close buttons, the `+` button, tree rows and the editor (places the cursor). The wheel scrolls whichever pane is under the pointer.
 - **Live preview.** Headings, checklists, callouts, code blocks and tables render as you type. Toggle it with `Space p`.
 - **96 NvChad themes.** Every base46 theme (onedark, catppuccin, gruvbox, tokyonight, rosepine, nord, everforest, kanagawa, the light ones …). `Space t` opens a picker that previews as you move; the choice is remembered.
+- **Notion-style `/` menu.** In INSERT mode, type `/` at the start of a line (or after a space) to insert headings, lists, to-dos, toggles, callouts, quotes, tables, dividers, code, images, video/audio links, a new sub-page or a link to another note. Keep typing to filter.
 - **Global finder.** `Ctrl+P` (or `f` on the start screen) searches every note from the workspace root down: file names (fuzzy) and the text inside notes, with a preview. `Enter` opens the note in the current tab at the matching line, `Ctrl+T` in a new one.
 - **Notion-style nesting.** A note can have sub-notes: `Project.md` plus a sibling `Project/` folder.
 
@@ -108,7 +109,7 @@ Leader is `Space`, as in NvChad. Press `?` or `Space h` in the app for the cheat
 | :-- | :-- |
 | `Ctrl+N` | New note (unsaved `Untitled-N` tab) |
 | `Ctrl+S` | Save; new notes open Save As |
-| `Ctrl+P` | Find a note (Telescope-style; `Enter` opens here, `Ctrl+T` in a new tab) |
+| `\` / `Ctrl+P` | Find a note (Telescope-style; `Enter` opens here, `Ctrl+T` in a new tab) |
 | `Ctrl+B` | Toggle explorer |
 | `Ctrl+C` | Quit (offers to save unsaved tabs) |
 
@@ -133,7 +134,7 @@ Leader is `Space`, as in NvChad. Press `?` or `Space h` in the app for the cheat
 | Key | Action |
 | :-- | :-- |
 | `n` | New note |
-| `f` | Find note |
+| `f` / `\` | Find note |
 | `t` | Themes |
 | `e` | Open explorer |
 | `1`–`5` | Open recent note |
@@ -152,7 +153,7 @@ Leader is `Space`, as in NvChad. Press `?` or `Space h` in the app for the cheat
 | `a` | New sub-note under the selection |
 | `r` | Rename (`Enter` confirm, `Esc` cancel) |
 | `d` | Delete (asks first) |
-| `/` | Find a note |
+| `\` | Find a note |
 | `W` | Collapse all |
 
 ### Editor
@@ -165,6 +166,7 @@ Leader is `Space`, as in NvChad. Press `?` or `Space h` in the app for the cheat
 | NORMAL | `gg` / `G` | Top / bottom |
 | NORMAL | `Ctrl+D` / `Ctrl+U`, `Ctrl+E` / `Ctrl+Y` | Scroll |
 | NORMAL | `x` / `dd` | Delete character / line |
+| INSERT | `/` | Block menu (at line start or after a space; `↑↓`, `Enter`, `Esc`) |
 | INSERT | `Esc` | Back to NORMAL |
 | COMMAND | `:w` | Save (Save As for new notes) |
 | COMMAND | `:w name`, `:saveas name` | Save under a new name (`folder/name` works) |

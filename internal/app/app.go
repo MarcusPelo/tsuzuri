@@ -301,6 +301,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.openFile(msg.ID)
 	case core.FindRequestMsg:
 		return m, m.openFinder()
+	case core.SlashActionMsg:
+		switch msg.Action {
+		case "page":
+			parent := m.sidebar.ContextParentID()
+			if b := m.activeBuffer(); b != nil && !b.draft() {
+				parent = b.id
+			}
+			return m, m.newDraft(parent)
+		case "link":
+			return m, m.openLinkPicker()
+		}
+		return m, nil
 	case core.ThemeMsg:
 		if msg.Name == "" {
 			return m, m.openThemePicker()
@@ -469,6 +481,8 @@ func (m *Model) handleKey(k tea.KeyMsg) tea.Cmd {
 			return m.movePane(-1, false)
 		case "ctrl+l":
 			return m.movePane(1, false)
+		case "\\":
+			return m.openFinder()
 		case "[":
 			return m.cycleBuffer(-1)
 		case "]":
@@ -532,7 +546,7 @@ func (m *Model) handleDashboardKey(k tea.KeyMsg) tea.Cmd {
 	switch s {
 	case "n", "ctrl+n":
 		return m.newDraft("")
-	case "f", "/", "ctrl+p":
+	case "f", "\\", "ctrl+p":
 		return m.startFind()
 	case "e", "ctrl+b":
 		return m.focusPane(focusSidebar)
@@ -724,6 +738,11 @@ func (m Model) View() string {
 	case m.themes != nil:
 		box, x, y := m.themes.view(&m)
 		screen = ui.Overlay(screen, box, x, y)
+	case m.viewMode == viewModeWorkspace && m.focus == focusEditor && m.content.SlashOpen():
+		if box, x, y, ok := m.content.SlashView(); ok {
+			l := m.layout()
+			screen = ui.Overlay(screen, box, l.EditorX+x, l.BodyY+y)
+		}
 	case m.showKeymap:
 		box := RenderKeymapModal(m.theme, m.width, m.height)
 		x, y := ui.Center(m.width, m.height, lipgloss.Width(box), lipgloss.Height(box))

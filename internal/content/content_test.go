@@ -111,3 +111,44 @@ func collect(cmd tea.Cmd) []tea.Msg {
 	}
 	return []tea.Msg{msg}
 }
+
+func TestSlashMenuInsertsBlocks(t *testing.T) {
+	c := content.New(theme.DefaultTheme())
+	c.SetSize(80, 20)
+	c.SetPage(core.Page{ID: "a.md", Content: ""})
+	c.SetFocused(true)
+	c = keys(c, "i/")
+	if !c.SlashOpen() {
+		t.Fatal("expected '/' at line start to open the block menu")
+	}
+	if box, _, _, ok := c.SlashView(); !ok || !strings.Contains(box, "Heading 1") || !strings.Contains(box, "Basic blocks") {
+		t.Fatalf("expected menu with sections, got %q", box)
+	}
+	c = keys(c, "todo")
+	c, _ = c.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	c = keys(c, "buy milk")
+	if c.Value() != "- [ ] buy milk" || c.SlashOpen() {
+		t.Fatalf("expected to-do inserted, got %q", c.Value())
+	}
+
+	// Code block puts the cursor inside the fence.
+	c, _ = c.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	c = keys(c, "/code")
+	c, _ = c.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	c = keys(c, "x := 1")
+	if !strings.HasSuffix(c.Value(), "```\nx := 1\n```") {
+		t.Fatalf("expected cursor inside code fence, got %q", c.Value())
+	}
+
+	// A slash inside a word is just a slash; Esc closes without changes.
+	c, _ = c.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	c = keys(c, "Goa/b")
+	if c.SlashOpen() {
+		t.Fatal("slash inside a word must not open the menu")
+	}
+	c = keys(c, " /")
+	c, _ = c.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	if c.SlashOpen() || c.Mode() != content.ModeInsert {
+		t.Fatal("Esc should only close the menu")
+	}
+}

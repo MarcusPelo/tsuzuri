@@ -198,3 +198,41 @@ func (m *Model) OpenLineAbove() {
 	m.col = 0
 	m.EnsureVisible()
 }
+
+// CursorScreen returns the cursor cell relative to the textarea's top-left
+// corner (including the line-number gutter), or ok=false when off screen.
+func (m Model) CursorScreen() (x, y int, ok bool) {
+	gutter := m.promptWidth
+	if m.ShowLineNumbers {
+		gutter += 6
+	}
+	y = m.cursorLineNumber() - m.viewport.YOffset
+	if y < 0 || y >= m.viewport.Height {
+		return 0, 0, false
+	}
+	return gutter + m.LineInfo().CharOffset, y, true
+}
+
+// RowCol returns the 0-based logical row and rune column of the cursor.
+func (m Model) RowCol() (int, int) { return m.row, m.col }
+
+// SetRowCol moves the cursor to a 0-based logical row and rune column.
+func (m *Model) SetRowCol(row, col int) {
+	m.row = clamp(row, 0, len(m.value)-1)
+	m.col = clamp(col, 0, len(m.value[m.row]))
+	m.lastCharOffset = 0
+	m.EnsureVisible()
+}
+
+// LineBeforeCursor returns the text of the cursor's line up to the cursor.
+func (m Model) LineBeforeCursor() string {
+	return string(m.value[m.row][:clamp(m.col, 0, len(m.value[m.row]))])
+}
+
+// DeleteBefore removes n runes before the cursor on the current line.
+func (m *Model) DeleteBefore(n int) {
+	line := m.value[m.row]
+	n = clamp(n, 0, m.col)
+	m.value[m.row] = append(line[:m.col-n:m.col-n], line[m.col:]...)
+	m.col -= n
+}

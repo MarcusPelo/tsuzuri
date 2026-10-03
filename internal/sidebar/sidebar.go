@@ -317,7 +317,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	}
 
 	switch key.String() {
-	case "/", "f":
+	case "\\", "f":
 		return m, findCmd
 
 	case "up", "k":
@@ -461,7 +461,7 @@ func (m Model) View() string {
 	fieldW := max(w-2, 4)
 	field := lipgloss.NewStyle().Background(th.Bg2)
 	left := field.Foreground(th.GreyFg).Render(" 󰍉 Find note")
-	hint := field.Foreground(th.Grey).Render("/ ")
+	hint := field.Foreground(th.Grey).Render("\\ ")
 	inner := left + field.Render(strings.Repeat(" ", max(fieldW-lipgloss.Width(left)-lipgloss.Width(hint), 0))) + hint
 	rows = append(rows, bg.Render(" ")+ui.FitLine(inner, fieldW, field)+bg.Render(" "))
 	rows = append(rows, "")

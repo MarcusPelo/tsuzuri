@@ -530,3 +530,29 @@ func TestFinderSearchesTextAcrossAllFolders(t *testing.T) {
 		t.Fatalf("expected itinerary.md open with the cursor on line 4:\n%s", v)
 	}
 }
+
+func TestSlashLinkToPage(t *testing.T) {
+	store := newTestStore(t)
+	if _, err := store.SaveAs("projects", "Roadmap Q4", "plan"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.SaveAs("journal", "today", ""); err != nil {
+		t.Fatal(err)
+	}
+	h := newHarness(t, store)
+	h.send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'\\'}}) // backslash = find
+	h.keys("today")
+	h.key(tea.KeyEnter)
+	h.keys("i/link")
+	h.key(tea.KeyEnter)
+	if v := h.view(); !strings.Contains(v, "Link to Note") {
+		t.Fatalf("expected link picker:\n%s", v)
+	}
+	h.keys("roadmap")
+	h.key(tea.KeyEnter)
+	h.send(tea.KeyMsg{Type: tea.KeyCtrlS})
+	got, _ := store.Get("journal/today.md")
+	if got.Content != "[Roadmap Q4](<../projects/Roadmap Q4.md>)" {
+		t.Fatalf("unexpected link: %q", got.Content)
+	}
+}

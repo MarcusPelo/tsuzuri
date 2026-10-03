@@ -11,6 +11,9 @@ All notable changes to this project are documented here. The format follows
   screen, `:colorscheme`), `--theme` / `--list-themes` flags, and the choice
   saved in the user config file. The whole screen is painted with the theme,
   so light themes work on dark terminals.
+- Notion-style `/` block menu in INSERT mode (headings, lists, to-do, toggle,
+  callout, quote, table, divider, code, media, sub-page, link to page).
+- `\` opens the finder (instead of `/`).
 - Global Telescope-style finder (`Ctrl+P`, `f` on home) searching file names
   (fuzzy) and note text across every folder from the root, with preview; opens in the current tab unless it has unsaved changes.
 - NvChad onedark look: nvdash start screen, nvim-tree explorer with indent
