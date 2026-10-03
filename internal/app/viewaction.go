@@ -396,13 +396,10 @@ func (m *Model) calendarHit(h preview.Hit) tea.Cmd {
 					return nil
 				})
 			case 1:
-				return m.prompt("Move \""+h.Arg+"\" to", strings.TrimSpace(date), "Date as YYYY-MM-DD", func(m *Model, v string) tea.Cmd {
-					if _, err := time.Parse("2006-01-02", v); err != nil {
-						m.setError("Not a date: " + v)
-						return nil
-					}
+				from, _ := time.Parse("2006-01-02", strings.TrimSpace(date))
+				m.pickDate("Move \""+h.Arg+"\" to", from, time.Time{}, func(m *Model, d time.Time) tea.Cmd {
 					lines := m.docLines()
-					lines[h.Line] = v + ": " + h.Arg
+					lines[h.Line] = d.Format("2006-01-02") + ": " + h.Arg
 					m.setDocLines(lines)
 					return nil
 				})
@@ -441,11 +438,13 @@ func spanLine(name string, start, end time.Time) string {
 func (m *Model) timelineHit(h preview.Hit) tea.Cmd {
 	switch h.Kind {
 	case "tl:add":
-		return m.prompt("New timeline item", "", "Starts today and lasts 3 days; click the bar to adjust", func(m *Model, v string) tea.Cmd {
-			if v != "" {
-				today := time.Now()
-				m.setDocLines(insertAt(m.docLines(), h.End, spanLine(v, today, today.AddDate(0, 0, 2))))
+		return m.prompt("New timeline item", "", "Next you'll pick the start and end dates", func(m *Model, v string) tea.Cmd {
+			if v == "" {
+				return nil
 			}
+			m.pickDates(v, time.Time{}, time.Time{}, func(m *Model, start, end time.Time) {
+				m.setDocLines(insertAt(m.docLines(), h.End, spanLine(v, start, end)))
+			})
 			return nil
 		})
 	case "tl:item":
@@ -479,15 +478,10 @@ func (m *Model) timelineHit(h preview.Hit) tea.Cmd {
 			case 5:
 				shift(0, -1)
 			case 6:
-				return m.prompt("Dates for "+name, start.Format("2006-01-02")+" -> "+end.Format("2006-01-02"), "YYYY-MM-DD -> YYYY-MM-DD", func(m *Model, v string) tea.Cmd {
-					if _, s, e, ok := parseSpan("x: " + v); ok {
-						lines := m.docLines()
-						lines[h.Line] = spanLine(name, s, e)
-						m.setDocLines(lines)
-					} else {
-						m.setError("Use YYYY-MM-DD -> YYYY-MM-DD")
-					}
-					return nil
+				m.pickDates(name, start, end, func(m *Model, s, e time.Time) {
+					lines := m.docLines()
+					lines[h.Line] = spanLine(name, s, e)
+					m.setDocLines(lines)
 				})
 			case 7:
 				return m.prompt("Rename", name, "", func(m *Model, v string) tea.Cmd {
@@ -505,6 +499,21 @@ func (m *Model) timelineHit(h preview.Hit) tea.Cmd {
 		})
 	}
 	return nil
+}
+
+// pickDates asks for a start date, then an end date on or after it.
+func (m *Model) pickDates(name string, start, end time.Time, done func(*Model, time.Time, time.Time)) {
+	m.pickDate("Start date · "+name, start, time.Time{}, func(m *Model, s time.Time) tea.Cmd {
+		initial := end
+		if initial.IsZero() || initial.Before(s) {
+			initial = s
+		}
+		m.pickDate("End date · "+name, initial, s, func(m *Model, e time.Time) tea.Cmd {
+			done(m, s, e)
+			return nil
+		})
+		return nil
+	})
 }
 
 // ---------------------------------------------------------------------------
@@ -673,6 +682,14 @@ func (m *Model) formHit(h preview.Hit) tea.Cmd {
 		})
 
 	case "form:text":
+		if strings.Contains(strings.ToLower(lines[h.Line]), "(date)") {
+			current, _ := time.Parse("2006-01-02", m.currentAnswer(h.Line))
+			m.pickDate(h.Arg, current, time.Time{}, func(m *Model, d time.Time) tea.Cmd {
+				m.setAnswer(h.Line, d.Format("2006-01-02"))
+				return nil
+			})
+			return nil
+		}
 		return m.prompt(h.Arg, m.currentAnswer(h.Line), "Your answer (saved in the note as \"= answer\")", func(m *Model, v string) tea.Cmd {
 			m.setAnswer(h.Line, v)
 			return nil

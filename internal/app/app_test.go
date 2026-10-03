@@ -872,3 +872,27 @@ func TestAddChoiceQuestionAndChangeType(t *testing.T) {
 		t.Fatalf("type change not applied:\n%s", got)
 	}
 }
+
+func TestTimelineNewItemPicksStartAndEndDates(t *testing.T) {
+	h := openWith(t, "```timeline\nAlpha: 2026-10-01 -> 2026-10-04\n```")
+	h.clickText("+ New")
+	h.keys("Launch")
+	h.key(tea.KeyEnter)
+	if v := h.view(); !strings.Contains(v, "Start date · Launch") {
+		t.Fatalf("expected the start date picker:\n%s", v)
+	}
+	today := time.Now()
+	h.keys("ll") // start = today + 2
+	h.key(tea.KeyEnter)
+	if v := h.view(); !strings.Contains(v, "End date · Launch") {
+		t.Fatalf("expected the end date picker:\n%s", v)
+	}
+	h.keys("hh") // cannot go before the start
+	h.keys("j")  // + 1 week
+	h.key(tea.KeyEnter)
+	start := today.AddDate(0, 0, 2).Format("2006-01-02")
+	end := today.AddDate(0, 0, 9).Format("2006-01-02")
+	if got := h.text(); !strings.Contains(got, "Launch: "+start+" -> "+end) {
+		t.Fatalf("expected Launch %s -> %s:\n%s", start, end, got)
+	}
+}
