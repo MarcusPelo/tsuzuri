@@ -223,7 +223,8 @@ func (s *Store) Get(id string) (Page, error) {
 		return Page{}, ErrPageNotFound
 	}
 
-	return Page{ID: id, Title: title, Content: string(data), ParentID: parentID, UpdatedAt: info.ModTime()}, nil
+	content := strings.ReplaceAll(string(data), "\r\n", "\n")
+	return Page{ID: id, Title: title, Content: content, ParentID: parentID, UpdatedAt: info.ModTime()}, nil
 }
 
 // childDirFor resolves the relative directory new children of parentID should
@@ -251,12 +252,50 @@ func (s *Store) childDirFor(parentID string) (string, error) {
 // sanitizeTitle strips path separators and surrounding whitespace so a title
 // can never escape its intended directory.
 func sanitizeTitle(title string) string {
-	replacer := strings.NewReplacer("/", "-", "\\", "-", "\x00", "")
-	cleaned := strings.TrimSpace(replacer.Replace(title))
+	cleaned := strings.Map(func(r rune) rune {
+		switch {
+		case r < 0x20:
+			return -1
+		case strings.ContainsRune(invalidNameChars, r):
+			return '-'
+		}
+		return r
+	}, title)
+	cleaned = strings.TrimRight(strings.TrimSpace(cleaned), ". ")
 	if cleaned == "" {
 		cleaned = "Untitled"
 	}
+	if reservedName(cleaned) {
+		cleaned += "-note"
+	}
 	return cleaned
+}
+
+// invalidNameChars can't appear in file names on Windows (and / nowhere);
+// rejecting them everywhere keeps notes portable between machines.
+const invalidNameChars = `/\:*?"<>|`
+
+// reservedName reports Windows device names (CON, NUL, COM1, …), which can't
+// be used as file names even with an extension.
+func reservedName(name string) bool {
+	base := strings.ToUpper(strings.TrimSuffix(name, mdExt))
+	switch base {
+	case "CON", "PRN", "AUX", "NUL":
+		return true
+	}
+	if len(base) == 4 && (strings.HasPrefix(base, "COM") || strings.HasPrefix(base, "LPT")) && base[3] >= '1' && base[3] <= '9' {
+		return true
+	}
+	return false
+}
+
+// writeText writes a note, keeping Windows (CRLF) line endings if the file
+// already used them; notes are always edited with plain \n.
+func writeText(abs, content string) error {
+	if old, err := os.ReadFile(abs); err == nil && strings.Contains(string(old), "\r\n") {
+		content = strings.ReplaceAll(content, "\n", "\r\n")
+	}
+	return os.WriteFile(abs, []byte(content), 0644)
 }
 
 func nextUntitled(absDir string) string {
@@ -374,7 +413,7 @@ func (s *Store) Update(p Page) (Page, error) {
 		abs = newAbs
 	}
 
-	if err := os.WriteFile(abs, []byte(p.Content), 0644); err != nil {
+	if err := writeText(abs, p.Content); err != nil {
 		return Page{}, fmt.Errorf("failed to save page: %w", err)
 	}
 
@@ -496,9 +535,13 @@ func NormalizeNotePath(dir, name string) (string, error) {
 	if name == "" {
 		return "", errors.New("file name is empty")
 	}
-	if strings.ContainsAny(name, "/\\\x00") {
-		return "", errors.New("file name cannot contain / or \\")
+	if strings.ContainsAny(name, invalidNameChars+"\x00") {
+		return "", errors.New(`file name cannot contain / \ : * ? " < > |`)
 	}
+	if reservedName(name) {
+		return "", errors.New(name + " is a reserved name on Windows")
+	}
+	name = strings.TrimRight(name, ". ")
 	if !strings.HasSuffix(strings.ToLower(name), mdExt) {
 		name += mdExt
 	} else {

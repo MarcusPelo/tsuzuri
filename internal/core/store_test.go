@@ -369,3 +369,32 @@ func TestAttachFileCopiesOutsideFilesAndLinksInsideOnes(t *testing.T) {
 		t.Fatalf("workspace file should be linked in place, got %q, %v", link, err)
 	}
 }
+
+func TestWindowsFriendlyNamesAndLineEndings(t *testing.T) {
+	for _, bad := range []string{"a:b", "what?", "CON", "nul.md", "x|y"} {
+		if _, err := core.NormalizeNotePath("", bad); err == nil {
+			t.Errorf("expected %q to be rejected", bad)
+		}
+	}
+	s := newTestStore(t)
+	p, err := s.Create("Q: what?", "")
+	if err != nil || strings.ContainsAny(p.ID, ":?") {
+		t.Fatalf("Create should sanitise the title, got %q %v", p.ID, err)
+	}
+
+	abs := filepath.Join(s.Root(), "win.md")
+	if err := os.WriteFile(abs, []byte("one\r\ntwo\r\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := s.Get("win.md")
+	if got.Content != "one\ntwo\n" {
+		t.Fatalf("CRLF should be normalised for editing, got %q", got.Content)
+	}
+	got.Content = "one\ntwo\nthree\n"
+	if _, err := s.Update(got); err != nil {
+		t.Fatal(err)
+	}
+	if data, _ := os.ReadFile(abs); string(data) != "one\r\ntwo\r\nthree\r\n" {
+		t.Fatalf("CRLF file should stay CRLF, got %q", data)
+	}
+}

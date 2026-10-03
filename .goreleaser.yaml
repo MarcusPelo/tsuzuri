@@ -13,9 +13,23 @@ builds:
     main: ./cmd/tsuzuri
     binary: tsuzuri
     env:
+      # Pure Go, statically linked: runs on every Linux distro (glibc or
+      # musl), macOS and Windows without extra libraries.
       - CGO_ENABLED=0
-    goos: [linux, darwin, windows]
-    goarch: [amd64, arm64]
+    goos: [linux, darwin, windows, freebsd]
+    goarch: [amd64, arm64, arm, "386"]
+    goarm: ["7"]
+    ignore:
+      - goos: darwin
+        goarch: arm
+      - goos: darwin
+        goarch: "386"
+      - goos: windows
+        goarch: arm
+      - goos: freebsd
+        goarch: arm
+      - goos: freebsd
+        goarch: "386"
     flags:
       - -trimpath
     ldflags:
@@ -28,11 +42,29 @@ archives:
       - goos: windows
         formats: [zip]
     name_template: >-
-      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}{{ with .Arm }}v{{ . }}{{ end }}
     files:
       - README.md
       - LICENSE
-      - CHANGELOG.md
+
+nfpms:
+  - id: packages
+    package_name: tsuzuri
+    file_name_template: >-
+      {{ .PackageName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}{{ with .Arm }}v{{ . }}{{ end }}
+    homepage: https://github.com/jaisuriya-11/tsuzuri
+    maintainer: Jai Suriya <jaisuriya-11@users.noreply.github.com>
+    description: >-
+      Notion-style notebook for the terminal with an NvChad look, editing
+      plain Markdown files with Vim keys, live preview and themes.
+    license: MIT
+    formats: [deb, rpm, apk, archlinux]
+    bindir: /usr/bin
+    contents:
+      - src: README.md
+        dst: /usr/share/doc/tsuzuri/README.md
+      - src: LICENSE
+        dst: /usr/share/licenses/tsuzuri/LICENSE
 
 checksum:
   name_template: checksums.txt
@@ -40,12 +72,22 @@ checksum:
 snapshot:
   version_template: "{{ incpatch .Version }}-next"
 
+release:
+  header: |
+    ## Install
+
+    **macOS / Linux**
+    ```sh
+    curl -fsSL https://raw.githubusercontent.com/jaisuriya-11/tsuzuri/main/install.sh | sh
+    ```
+
+    **Windows (PowerShell)**
+    ```powershell
+    irm https://raw.githubusercontent.com/jaisuriya-11/tsuzuri/main/install.ps1 | iex
+    ```
+
+    Or download the archive / `.deb` / `.rpm` / `.apk` / Arch package for your system below.
+
+# First release: the notes are the install header above, not a commit list.
 changelog:
-  sort: asc
-  use: github
-  filters:
-    exclude:
-      - "^docs:"
-      - "^test:"
-      - "^chore:"
-      - Merge pull request
+  disable: true

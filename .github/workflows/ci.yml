@@ -2,38 +2,136 @@ name: CI
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
   pull_request:
-    branches: [ main ]
+    branches: [main]
 
 jobs:
-  build-and-test:
-    name: Build & Test
-    runs-on: ubuntu-latest
-
+  test:
+    name: Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Go
-        uses: actions/setup-go@v5
+      - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
           cache: true
 
-      - name: Check code formatting (gofmt)
+      - name: Check formatting
+        if: runner.os == 'Linux'
         run: |
           if [ -n "$(gofmt -l .)" ]; then
-            echo "The following files are not formatted properly:"
             gofmt -l .
             exit 1
           fi
 
-      - name: Run go vet
+      - name: Vet
         run: go vet ./...
 
-      - name: Run unit tests
-        run: go test -v ./...
+      - name: Test
+        run: go test ./...
 
-      - name: Build packages
-        run: go build ./...
+      - name: Build
+        run: go build ./cmd/tsuzuri
+
+  # Build the full release locally and install it on every platform the
+  # installers and packages target.
+  snapshot:
+    name: Snapshot release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          args: release --snapshot --clean --skip=before
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: |
+            dist/*.tar.gz
+            dist/*.zip
+            dist/*.deb
+            dist/*.rpm
+            dist/*.apk
+            dist/*.pkg.tar.zst
+            dist/checksums.txt
+            dist/metadata.json
+
+  install-macos:
+    name: Install (macOS)
+    needs: snapshot
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+      - name: Install script
+        run: sh ./.github/scripts/install-test.sh
+
+  install-linux:
+    name: Install (${{ matrix.image }})
+    needs: snapshot
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { image: "ubuntu:24.04", setup: "apt-get update && apt-get install -y python3 curl", pkg: "dpkg -i dist/*_linux_amd64.deb" }
+          - { image: "debian:stable-slim", setup: "apt-get update && apt-get install -y python3 wget", pkg: "dpkg -i dist/*_linux_amd64.deb" }
+          - { image: "fedora:latest", setup: "dnf install -y python3 tar gzip", pkg: "rpm -i dist/*_linux_amd64.rpm" }
+          - { image: "alpine:latest", setup: "apk add --no-cache python3", pkg: "apk add --allow-untrusted dist/*_linux_amd64.apk" }
+          - { image: "archlinux:latest", setup: "pacman -Sy --noconfirm python", pkg: "pacman -U --noconfirm dist/*_linux_amd64.pkg.tar.zst" }
+          - { image: "opensuse/tumbleweed", setup: "zypper -n install python3 curl tar gzip", pkg: "rpm -i --nodeps dist/*_linux_amd64.rpm" }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+      - name: Install script and package
+        run: |
+          docker run --rm -v "$PWD:/w" -w /w "${{ matrix.image }}" sh -c '
+            set -e
+            ${{ matrix.setup }}
+            sh ./.github/scripts/install-test.sh
+            ${{ matrix.pkg }}
+            /usr/bin/tsuzuri --version
+          '
+
+  install-windows:
+    name: Install (Windows)
+    needs: snapshot
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+      - name: Install script
+        shell: pwsh
+        run: |
+          $version = (Get-Content dist/metadata.json | ConvertFrom-Json).version
+          $server = Start-Process python -ArgumentList '-m', 'http.server', '8765', '--directory', 'dist' -PassThru
+          Start-Sleep -Seconds 3
+          $env:TSUZURI_VERSION = "v$version"
+          $env:TSUZURI_BASE_URL = 'http://127.0.0.1:8765'
+          $env:TSUZURI_INSTALL_DIR = "$PWD\bin"
+          ./install.ps1
+          & "$PWD\bin\tsuzuri.exe" --version
+          Stop-Process $server

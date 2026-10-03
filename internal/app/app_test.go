@@ -598,6 +598,7 @@ func TestTabIndentsAndLeaderTabSwitchesTabs(t *testing.T) {
 func TestSlashImageUsesFileBrowserAndCopiesIntoAssets(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home) // Windows
 	t.Setenv("TSUZURI_NATIVE_PICKER", "0")
 	dl := filepath.Join(home, "Downloads")
 	if err := os.MkdirAll(filepath.Join(dl, "trips"), 0o755); err != nil {
@@ -694,6 +695,7 @@ func TestCopyByDragYankAndVisualMode(t *testing.T) {
 func TestSlashCoverSetsFrontMatter(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home) // Windows
 	t.Setenv("TSUZURI_NATIVE_PICKER", "0")
 	_ = os.MkdirAll(filepath.Join(home, "Downloads"), 0o755)
 	if err := os.WriteFile(filepath.Join(home, "Downloads", "gcp.png"), []byte("png"), 0o644); err != nil {

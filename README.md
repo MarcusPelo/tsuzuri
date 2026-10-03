@@ -58,33 +58,68 @@
 
 ## Install
 
-### Prebuilt binaries
+Tsuzuri is a single self-contained binary with no dependencies. It runs on
+**macOS** (Intel and Apple Silicon), **Windows** (x64, ARM64) and **any Linux
+distribution** (x86-64, ARM64, ARMv7 such as Raspberry Pi, x86), plus FreeBSD.
 
-Download the archive for your OS and CPU from the [latest release](https://github.com/jaisuriya-11/tsuzuri/releases/latest), extract it and put `tsuzuri` somewhere on your `PATH`:
+### macOS and Linux
 
-```bash
-# example: macOS on Apple Silicon (replace X.Y.Z with the release version)
-tar -xzf tsuzuri_X.Y.Z_darwin_arm64.tar.gz
-sudo mv tsuzuri /usr/local/bin/
+```sh
+curl -fsSL https://raw.githubusercontent.com/jaisuriya-11/tsuzuri/main/install.sh | sh
 ```
 
-Builds are published for Linux, macOS and Windows on `amd64` and `arm64`. Verify downloads against `checksums.txt`.
+The script picks the right build for your system, verifies its checksum and
+installs to `/usr/local/bin` (or `~/.local/bin` without sudo). No curl? Use
+`wget -qO- … | sh`. Set `TSUZURI_VERSION=v0.1.0` to pin a version or
+`TSUZURI_INSTALL_DIR` to choose the folder.
+
+### Windows
+
+In PowerShell:
+
+```powershell
+irm https://raw.githubusercontent.com/jaisuriya-11/tsuzuri/main/install.ps1 | iex
+```
+
+It installs to `%LOCALAPPDATA%\Programs\tsuzuri` and adds it to your `PATH`.
+Use [Windows Terminal](https://aka.ms/terminal) for full colour and mouse support.
+
+### Linux packages
+
+Every [release](https://github.com/jaisuriya-11/tsuzuri/releases/latest) also ships native packages:
+
+| Distro | Command |
+| :-- | :-- |
+| Debian, Ubuntu, Mint, Pop!_OS | `sudo dpkg -i tsuzuri_*_linux_amd64.deb` |
+| Fedora, RHEL, CentOS, openSUSE | `sudo rpm -i tsuzuri_*_linux_amd64.rpm` |
+| Alpine | `sudo apk add --allow-untrusted tsuzuri_*_linux_amd64.apk` |
+| Arch, Manjaro, EndeavourOS | `sudo pacman -U tsuzuri_*_linux_amd64.pkg.tar.zst` |
+| Anything else (NixOS, Void, Gentoo, …) | use the install script or unpack the `.tar.gz` |
+
+Replace `amd64` with `arm64`, `armv7` or `386` for other CPUs.
+
+### Manual download
+
+Grab the `.tar.gz` (or `.zip` on Windows) for your system from the
+[latest release](https://github.com/jaisuriya-11/tsuzuri/releases/latest),
+unpack it and put `tsuzuri` on your `PATH`. Checksums are in `checksums.txt`.
 
 ### With Go
 
-```bash
+```sh
 go install github.com/jaisuriya-11/tsuzuri/cmd/tsuzuri@latest
 ```
 
-### From source
+### Requirements and tips
 
-```bash
-git clone https://github.com/jaisuriya-11/tsuzuri.git
-cd tsuzuri
-make build        # binary at ./bin/tsuzuri
-```
+- A terminal with true colour: Windows Terminal, iTerm2, WezTerm, Kitty, Alacritty, Ghostty, GNOME Terminal, Konsole… (macOS Terminal.app works with fewer colours).
+- A [Nerd Font](https://www.nerdfonts.com/) for icons (everything works without one; icons just show as boxes).
+- Clipboard: works out of the box on macOS and Windows. On Linux install `wl-clipboard` (Wayland) or `xclip` / `xsel` (X11); over SSH Tsuzuri falls back to the terminal's OSC 52 clipboard.
+- File dialogs for `/image` use Finder, the Windows picker, or `zenity` / `kdialog` on Linux; otherwise a built-in browser opens.
 
-Requires the Go version listed in `go.mod`. Icons need a [Nerd Font](https://www.nerdfonts.com/) in your terminal.
+### Uninstall
+
+Delete the binary (`/usr/local/bin/tsuzuri`, `~/.local/bin/tsuzuri` or `%LOCALAPPDATA%\Programs\tsuzuri`), or remove the package with your package manager. Settings live in `~/.config/tsuzuri` (`%APPDATA%\tsuzuri` on Windows; `~/Library/Application Support/tsuzuri` on macOS).
 
 ## Usage
 
@@ -250,7 +285,7 @@ Code layout:
 
 ### Releasing
 
-Releases are built by [GoReleaser](https://goreleaser.com) in GitHub Actions. Push a semver tag and the workflow publishes binaries, archives and checksums:
+Releases are built by [GoReleaser](https://goreleaser.com) in GitHub Actions. Every push runs the tests on Linux, macOS and Windows and test-installs a snapshot build on Ubuntu, Debian, Fedora, Alpine, Arch, openSUSE, macOS and Windows. Push a semver tag to publish binaries, Linux packages and checksums:
 
 ```bash
 git tag -a v0.1.0 -m "v0.1.0"
