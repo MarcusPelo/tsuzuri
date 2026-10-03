@@ -219,6 +219,8 @@ Leader is `Space`, as in NvChad. Press `?` or `Space h` in the app for the cheat
 | `j` / `k` | Scroll one line |
 | `d` / `u` | Half page |
 | `g` / `G` | Top / bottom |
+| click `▾` / `▸` | Fold / unfold a heading's section or a code block |
+| `zM` / `zR` | Fold / unfold everything |
 | `<` / `>` (or `H` / `L`), `T` | Previous / next month, today, in calendar blocks (or click `‹  Today  ›`) |
 
 ## Development

@@ -217,3 +217,45 @@ func TestCalendarMonthNavigation(t *testing.T) {
 		t.Fatalf("expected February after clicking ›:\n%s", view())
 	}
 }
+
+func TestFoldHeadingsAndCode(t *testing.T) {
+	p := preview.New(theme.DefaultTheme())
+	p.SetSize(70, 40)
+	p.SetPage(core.Page{ID: "f.md", Content: "# One\nsecret text\n## Sub\nmore\n# Two\n```go\nfmt.Println(1)\n```\nafter"})
+	view := func() string { return ansi.Strip(p.View()) }
+	click := func(text string) {
+		t.Helper()
+		for y, l := range strings.Split(view(), "\n") {
+			if i := strings.Index(l, text); i >= 0 {
+				p, _ = p.Update(tea.MouseMsg{X: ansi.StringWidth(l[:i]) + 1, Y: y, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
+				return
+			}
+		}
+		t.Fatalf("%q not shown:\n%s", text, view())
+	}
+
+	click("One")
+	v := view()
+	if strings.Contains(v, "secret text") || strings.Contains(v, "Sub") || !strings.Contains(v, "▸") || !strings.Contains(v, "… 3 lines") {
+		t.Fatalf("heading One should hide its section:\n%s", v)
+	}
+	if !strings.Contains(v, "Two") || !strings.Contains(v, "fmt.Println") {
+		t.Fatalf("the next H1 must stay visible:\n%s", v)
+	}
+
+	click("go · 1 line")
+	if strings.Contains(view(), "fmt.Println") {
+		t.Fatalf("code block should fold:\n%s", view())
+	}
+
+	p, _ = p.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'z'}})
+	p, _ = p.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'R'}})
+	if v := view(); !strings.Contains(v, "secret text") || !strings.Contains(v, "fmt.Println") {
+		t.Fatalf("zR should open everything:\n%s", v)
+	}
+	p, _ = p.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'z'}})
+	p, _ = p.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'M'}})
+	if v := view(); strings.Contains(v, "secret text") || strings.Contains(v, "after") {
+		t.Fatalf("zM should fold everything:\n%s", v)
+	}
+}

@@ -46,6 +46,10 @@ func addHit(hs *[]Hit, h Hit) {
 type CalendarView struct {
 	Shift int  // months forward (negative = back)
 	Today bool // start from the current month instead of the block's
+	// Folded holds the keys of collapsed headings / code blocks.
+	Folded map[string]bool
+	// FoldAll collapses every heading and code block (zM).
+	FoldAll bool
 }
 
 // calendarNav is the clickable header on every calendar.

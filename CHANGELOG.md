@@ -21,6 +21,8 @@ All notable changes to this project are documented here. The format follows
 - Table editing: Tab between cells (adds rows), `:addrow`, `:addcol`,
   `:delrow`, `:delcol`, `:tablefmt` and table actions in the `/` menu, with
   automatic column alignment.
+- Collapsible headings and code blocks in the preview (click ▾/▸, `zM`,
+  `zR`).
 - Views are interactive in the preview: board (add/move/rename/delete
   cards and columns), calendar (add/move/rename/delete events), timeline
   (add, shift, extend, set dates), charts (edit/add/delete values) and forms

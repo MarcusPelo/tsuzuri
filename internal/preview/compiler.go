@@ -1,6 +1,7 @@
 package preview
 
 import (
+	"fmt"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -79,6 +80,7 @@ type compiler struct {
 	width   int
 	baseDir string // folder relative image paths resolve against
 	hits    []Hit
+	seen    map[string]int // occurrence counters for fold keys
 	// Document positions of the block being rendered.
 	lineOffset, fence, fenceEnd int
 	cal                         CalendarView
@@ -155,9 +157,28 @@ func CompileHits(input string, th theme.Theme, contentWidth int, baseDir string,
 	input = htmlCommentRegex.ReplaceAllString(strings.ReplaceAll(input, "\t", "    "), "")
 	lines := strings.Split(input, "\n")
 
+	skipLevel := 0 // >0 while inside a collapsed heading's section
+	skipFence := ""
 	for i := 0; i < len(lines); i++ {
 		line := lines[i]
 		trimmed := strings.TrimSpace(line)
+
+		if skipLevel > 0 {
+			switch {
+			case skipFence != "":
+				if strings.HasPrefix(trimmed, skipFence) {
+					skipFence = ""
+				}
+				continue
+			case strings.HasPrefix(trimmed, "```") || strings.HasPrefix(trimmed, "~~~"):
+				skipFence = trimmed[:3]
+				continue
+			case headingRegex.MatchString(trimmed) && len(headingRegex.FindStringSubmatch(trimmed)[1]) <= skipLevel:
+				skipLevel = 0
+			default:
+				continue
+			}
+		}
 
 		// Fenced code blocks.
 		if strings.HasPrefix(trimmed, "```") || strings.HasPrefix(trimmed, "~~~") {
@@ -217,9 +238,24 @@ func CompileHits(input string, th theme.Theme, contentWidth int, baseDir string,
 			m := headingRegex.FindStringSubmatch(trimmed)
 			level := len(m[1])
 			st := c.st.headings[level-1]
-			prefix := []string{"󰉫 ", "󰉬 ", "󰉭 ", "󰉮 ", "󰉯 ", "󰉰 "}[level-1]
+			key := c.foldKey("h", m[1]+m[2])
+			folded := c.folded(key)
+			arrow := "▾ "
+			if folded {
+				arrow = "▸ "
+			}
+			prefix := arrow + []string{"󰉫 ", "󰉬 ", "󰉭 ", "󰉮 ", "󰉯 ", "󰉰 "}[level-1]
 			c.blank()
-			c.emit(c.wrapIndent(c.inline(m[2], st), st.Render(prefix), "  ")...)
+			c.hits = append(c.hits, Hit{Row: len(c.out), H: 1, X1: c.width, Kind: "fold", Arg: key, Line: -1})
+			heading := c.wrapIndent(c.inline(m[2], st), st.Render(prefix), "    ")
+			if folded {
+				hidden := sectionLength(lines, i, level)
+				heading[len(heading)-1] += c.st.muted.Render(fmt.Sprintf("  … %d lines", hidden))
+				c.emit(heading...)
+				skipLevel = level
+				continue
+			}
+			c.emit(heading...)
 			if level == 1 {
 				c.emit(c.st.headings[0].Render(strings.Repeat("━", min(c.width, max(ansi.StringWidth(m[2])+2, 8)))))
 			}
@@ -318,9 +354,23 @@ func (c *compiler) codeBlock(lang string, code []string) {
 		return
 	}
 	c.blank()
-	if lang != "" {
-		c.emit(c.st.codeLang.Render(" " + lang))
+	key := c.foldKey("c", lang)
+	label := lang
+	if label == "" {
+		label = "code"
 	}
+	plural := "s"
+	if len(code) == 1 {
+		plural = ""
+	}
+	info := fmt.Sprintf("%s · %d line%s", label, len(code), plural)
+	c.hits = append(c.hits, Hit{Row: len(c.out), H: 1, X1: c.width, Kind: "fold", Arg: key, Line: -1})
+	if c.folded(key) {
+		c.emit(c.st.codeLang.Render("▸ " + info))
+		c.blank()
+		return
+	}
+	c.emit(c.st.codeLang.Render("▾ " + info))
 	inner := max(c.width-4, 6)
 	colors := highlight.Code(lang, strings.Join(code, "\n"), c.st.th)
 	text := lipgloss.NewStyle().Foreground(c.st.th.Fg)
@@ -375,6 +425,48 @@ func (c *compiler) image(alt, src string) {
 		c.emit(c.st.muted.Italic(true).Render(ui.Truncate(alt, c.width)))
 	}
 	c.blank()
+}
+
+// foldKey identifies a heading or code block by kind, text and occurrence,
+// so folds survive edits elsewhere in the note.
+func (c *compiler) foldKey(kind, text string) string {
+	if c.seen == nil {
+		c.seen = map[string]int{}
+	}
+	k := kind + ":" + text
+	c.seen[k]++
+	return fmt.Sprintf("%s#%d", k, c.seen[k])
+}
+
+func (c *compiler) folded(key string) bool {
+	if c.cal.FoldAll {
+		return !c.cal.Folded[key] // in fold-all mode the map lists the opened ones
+	}
+	return c.cal.Folded[key]
+}
+
+// sectionLength counts the lines under heading i until the next heading of
+// the same or a higher level.
+func sectionLength(lines []string, i, level int) int {
+	n := 0
+	fence := ""
+	for j := i + 1; j < len(lines); j++ {
+		t := strings.TrimSpace(lines[j])
+		if fence == "" && headingRegex.MatchString(t) && len(headingRegex.FindStringSubmatch(t)[1]) <= level {
+			break
+		}
+		if strings.HasPrefix(t, "```") || strings.HasPrefix(t, "~~~") {
+			if fence == "" {
+				fence = t[:3]
+			} else if strings.HasPrefix(t, fence) {
+				fence = ""
+			}
+		}
+		if t != "" {
+			n++
+		}
+	}
+	return n
 }
 
 func splitRow(line string) []string {

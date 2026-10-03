@@ -25,6 +25,7 @@ type Model struct {
 	baseDir    string
 	cal        CalendarView
 	hits       []Hit
+	pendingZ   bool
 	focused    bool
 	ready      bool
 }
@@ -130,6 +131,22 @@ func (m *Model) ShiftCalendars(delta int, today bool) {
 	m.recompile()
 }
 
+// ToggleFold collapses or expands one heading section or code block.
+func (m *Model) ToggleFold(key string) {
+	if m.cal.Folded == nil {
+		m.cal.Folded = map[string]bool{}
+	}
+	m.cal.Folded[key] = !m.cal.Folded[key]
+	m.recompile()
+}
+
+// FoldAll collapses (true) or expands (false) every section and code block.
+func (m *Model) FoldAll(fold bool) {
+	m.cal.FoldAll = fold
+	m.cal.Folded = map[string]bool{}
+	m.recompile()
+}
+
 // HitMsg reports a click on an interactive part of a view block.
 type HitMsg struct{ Hit Hit }
 
@@ -159,6 +176,8 @@ func (m *Model) click(x, y int) tea.Cmd {
 		m.ShiftCalendars(1, false)
 	case "cal:today":
 		m.ShiftCalendars(0, true)
+	case "fold":
+		m.ToggleFold(h.Arg)
 	default:
 		return func() tea.Msg { return HitMsg{Hit: h} }
 	}
@@ -190,6 +209,9 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		}
 		return m, nil
 	case tea.KeyMsg:
+		if k := msg.String(); m.pendingZ && k != "M" && k != "R" {
+			m.pendingZ = false
+		}
 		switch msg.String() {
 		case "j", "down":
 			m.viewport.ScrollDown(1)
@@ -203,6 +225,15 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			m.viewport.PageDown()
 		case "pgup", "ctrl+b":
 			m.viewport.PageUp()
+		case "z":
+			m.pendingZ = true
+			return m, nil
+		case "M", "R":
+			if m.pendingZ {
+				m.pendingZ = false
+				m.FoldAll(msg.String() == "M")
+				return m, nil
+			}
 		case "<", "H":
 			m.ShiftCalendars(-1, false)
 		case ">", "L":
