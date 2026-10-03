@@ -311,7 +311,7 @@ func (f *finder) view(m *Model) (string, int, int) {
 
 	// Title + count.
 	title := bg.Foreground(th.Blue).Render(" 󰍉 ") + bg.Foreground(th.Fg).Bold(true).Render("Find Note") + bg.Foreground(th.GreyFg2).Render("  in "+f.root+"/")
-	count := bg.Foreground(th.GreyFg2).Render(fmt.Sprintf("%d / %d ", len(f.matches), len(f.notes)))
+	count := bg.Foreground(th.GreyFg2).Render(fmt.Sprintf("%d results · %d notes ", len(f.matches), len(f.notes)))
 	rows = append(rows, title+bg.Render(strings.Repeat(" ", max(inner-lipgloss.Width(title)-lipgloss.Width(count), 0)))+count)
 
 	// Prompt.
