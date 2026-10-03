@@ -78,6 +78,7 @@ type compiler struct {
 	st      styles
 	width   int
 	baseDir string // folder relative image paths resolve against
+	cal     CalendarView
 	out     []string
 	para    []string
 }
@@ -126,10 +127,15 @@ func Compile(input string, th theme.Theme, contentWidth int) string {
 // CompileIn is Compile for a note stored in baseDir, so local images can be
 // found and drawn.
 func CompileIn(input string, th theme.Theme, contentWidth int, baseDir string) string {
+	return CompileWith(input, th, contentWidth, baseDir, CalendarView{})
+}
+
+// CompileWith is CompileIn with a calendar navigation state.
+func CompileWith(input string, th theme.Theme, contentWidth int, baseDir string, cal CalendarView) string {
 	if contentWidth < 10 {
 		contentWidth = 40
 	}
-	c := &compiler{st: newStyles(th), width: contentWidth, baseDir: baseDir}
+	c := &compiler{st: newStyles(th), width: contentWidth, baseDir: baseDir, cal: cal}
 
 	meta, input := SplitFrontMatter(input)
 	c.header(meta)
@@ -277,7 +283,7 @@ func callout(s string) (string, string, bool) {
 }
 
 func (c *compiler) codeBlock(lang string, code []string) {
-	if lines, ok := renderBlock(lang, code, c.st.th, c.width); ok {
+	if lines, ok := renderBlock(lang, code, c.st.th, c.width, c.cal); ok {
 		c.blank()
 		for _, l := range lines {
 			if ansi.StringWidth(l) > c.width {

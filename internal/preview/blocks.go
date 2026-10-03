@@ -22,12 +22,21 @@ const dateLayout = "2006-01-02"
 
 // renderBlock draws the special fenced blocks (board, calendar, timeline,
 // chart, form). ok is false for ordinary code.
-func renderBlock(lang string, body []string, th theme.Theme, width int) ([]string, bool) {
+// CalendarView shifts every calendar block while browsing the preview.
+type CalendarView struct {
+	Shift int  // months forward (negative = back)
+	Today bool // start from the current month instead of the block's
+}
+
+// calendarNav is the clickable header on every calendar.
+const calendarNav = "‹  Today  ›"
+
+func renderBlock(lang string, body []string, th theme.Theme, width int, cal CalendarView) ([]string, bool) {
 	switch strings.ToLower(strings.TrimSpace(lang)) {
 	case "board", "kanban":
 		return renderBoard(body, th, width), true
 	case "calendar":
-		return renderCalendar(body, th, width), true
+		return renderCalendar(body, th, width, cal), true
 	case "timeline", "gantt":
 		return renderTimeline(body, th, width), true
 	case "chart":
@@ -206,13 +215,14 @@ func parseEvents(lines []string) []event {
 	return out
 }
 
-func renderCalendar(body []string, th theme.Theme, width int) []string {
+func renderCalendar(body []string, th theme.Theme, width int, cal CalendarView) []string {
 	meta, rest := keyValues(body, "month")
 	today := now()
 	month := time.Date(today.Year(), today.Month(), 1, 0, 0, 0, 0, time.UTC)
-	if m, err := time.Parse("2006-01", meta["month"]); err == nil {
+	if m, err := time.Parse("2006-01", meta["month"]); err == nil && !cal.Today {
 		month = m
 	}
+	month = month.AddDate(0, cal.Shift, 0)
 	events := parseEvents(rest)
 	byDay := map[string][]string{}
 	for _, e := range events {
@@ -229,8 +239,11 @@ func renderCalendar(body []string, th theme.Theme, width int) []string {
 	muted := lipgloss.NewStyle().Foreground(th.GreyFg)
 	text := lipgloss.NewStyle().Foreground(th.Fg)
 
-	title := text.Bold(true).Render(month.Format("January 2006"))
-	out := []string{title + "  " + muted.Render(fmt.Sprintf("%d events", len(events))), ""}
+	title := text.Bold(true).Render(month.Format("January 2006")) + "  " + muted.Render(fmt.Sprintf("%d events", len(events)))
+	nav := lipgloss.NewStyle().Foreground(th.GreyFg2).Render(calendarNav)
+	gridW := 7*cw + 8
+	gap := max(gridW-ansi.StringWidth(title)-ansi.StringWidth(nav), 2)
+	out := []string{title + strings.Repeat(" ", gap) + nav, ""}
 
 	var head strings.Builder
 	head.WriteString(" ")

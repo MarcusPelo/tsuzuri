@@ -11,6 +11,7 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // Model represents the real-time compiled Markdown preview component.
@@ -23,6 +24,7 @@ type Model struct {
 	title      string
 	rawContent string
 	baseDir    string
+	cal        CalendarView
 	focused    bool
 	ready      bool
 }
@@ -112,8 +114,45 @@ func (m *Model) recompile() {
 	if vpWidth <= 0 {
 		vpWidth = m.width - 2
 	}
-	compiled := CompileIn(m.rawContent, m.theme, vpWidth, m.baseDir)
+	compiled := CompileWith(m.rawContent, m.theme, vpWidth, m.baseDir, m.cal)
 	m.viewport.SetContent(compiled)
+}
+
+// ShiftCalendars moves every calendar by delta months; today jumps to the
+// current month.
+func (m *Model) ShiftCalendars(delta int, today bool) {
+	if today {
+		m.cal = CalendarView{Today: true}
+	} else {
+		m.cal.Shift += delta
+	}
+	m.recompile()
+}
+
+// clickCalendarNav handles a click on a calendar's "‹  Today  ›" header.
+func (m *Model) clickCalendarNav(x, y int) bool {
+	lines := strings.Split(m.viewport.View(), "\n")
+	if y < 0 || y >= len(lines) {
+		return false
+	}
+	plain := ansi.Strip(lines[y])
+	i := strings.Index(plain, calendarNav)
+	if i < 0 {
+		return false
+	}
+	start := ansi.StringWidth(plain[:i])
+	col := x - 1 - start // one column of left padding
+	switch {
+	case col >= 0 && col <= 1:
+		m.ShiftCalendars(-1, false)
+	case col >= 3 && col <= 7:
+		m.ShiftCalendars(0, true)
+	case col >= 9 && col <= 11:
+		m.ShiftCalendars(1, false)
+	default:
+		return false
+	}
+	return true
 }
 
 // ScrollBy scrolls the preview by n lines (negative scrolls up).
@@ -134,6 +173,10 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			m.ScrollBy(-3)
 		case tea.MouseButtonWheelDown:
 			m.ScrollBy(3)
+		case tea.MouseButtonLeft:
+			if msg.Action == tea.MouseActionPress {
+				m.clickCalendarNav(msg.X, msg.Y)
+			}
 		}
 		return m, nil
 	case tea.KeyMsg:
@@ -150,6 +193,12 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			m.viewport.PageDown()
 		case "pgup", "ctrl+b":
 			m.viewport.PageUp()
+		case "<", "H":
+			m.ShiftCalendars(-1, false)
+		case ">", "L":
+			m.ShiftCalendars(1, false)
+		case "T":
+			m.ShiftCalendars(0, true)
 		case "g", "home":
 			m.viewport.GotoTop()
 		case "G", "end":

@@ -1,6 +1,7 @@
 package preview_test
 
 import (
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 	"strings"
 	"testing"
@@ -183,5 +184,36 @@ func TestTimelineFitsLongRanges(t *testing.T) {
 		if strings.Contains(plain, "1011") || strings.Contains(plain, "3031") {
 			t.Errorf("width %d: day numbers ran together:\n%s", w, plain)
 		}
+	}
+}
+
+func TestCalendarMonthNavigation(t *testing.T) {
+	p := preview.New(theme.DefaultTheme())
+	p.SetSize(80, 40)
+	p.SetPage(core.Page{ID: "c.md", Content: "```calendar\nmonth: 2026-02\n2026-03-10: Trip\n```"})
+	view := func() string { return ansi.Strip(p.View()) }
+	if !strings.Contains(view(), "February 2026") {
+		t.Fatalf("expected February:\n%s", view())
+	}
+	p, _ = p.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'>'}})
+	if v := view(); !strings.Contains(v, "March 2026") || !strings.Contains(v, "Trip") {
+		t.Fatalf("expected March with its event after '>':\n%s", v)
+	}
+	p, _ = p.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'<'}})
+	p, _ = p.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'<'}})
+	if !strings.Contains(view(), "January 2026") {
+		t.Fatalf("expected January after two '<':\n%s", view())
+	}
+
+	// Click the "›" in the header.
+	for y, l := range strings.Split(view(), "\n") {
+		if i := strings.Index(l, "‹  Today  ›"); i >= 0 {
+			x := ansi.StringWidth(l[:i]) + 10
+			p, _ = p.Update(tea.MouseMsg{X: x, Y: y, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
+			break
+		}
+	}
+	if !strings.Contains(view(), "February 2026") {
+		t.Fatalf("expected February after clicking ›:\n%s", view())
 	}
 }

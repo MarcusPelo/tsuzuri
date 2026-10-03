@@ -21,6 +21,8 @@ All notable changes to this project are documented here. The format follows
 - Table editing: Tab between cells (adds rows), `:addrow`, `:addcol`,
   `:delrow`, `:delcol`, `:tablefmt` and table actions in the `/` menu, with
   automatic column alignment.
+- Calendars can be browsed month by month in the preview (`<` `>` `T`, or
+  click `‹ Today ›`) without editing the note.
 - Board, calendar, timeline, chart (pixel art: bar/hbar/line/pie/donut) and
   form views, written as editable fenced blocks and drawn in the preview.
 - Page cover banners (`/cover`, front matter `cover:` / `icon:`) drawn as
