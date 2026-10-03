@@ -1,5 +1,11 @@
 package textarea
 
+import (
+	"strings"
+
+	"github.com/charmbracelet/lipgloss"
+)
+
 // tsuzuri: helpers that are not part of the upstream bubbles textarea API.
 
 // YOffset returns the first visible visual (soft-wrapped) line.
@@ -261,3 +267,32 @@ func (m *Model) OutdentLine(n int) {
 
 // CurrentLine returns the cursor's whole line.
 func (m Model) CurrentLine() string { return string(m.value[m.row]) }
+
+// paint renders runes of line l starting at rune offset off, applying
+// LineColors on top of style.
+func (m Model) paint(style lipgloss.Style, l, off int, runes []rune) string {
+	if l >= len(m.LineColors) || len(m.LineColors[l]) == 0 {
+		return style.Render(string(runes))
+	}
+	colors := m.LineColors[l]
+	color := func(i int) lipgloss.Color {
+		if i := off + i; i >= 0 && i < len(colors) {
+			return colors[i]
+		}
+		return ""
+	}
+	var b strings.Builder
+	start := 0
+	for i := 1; i <= len(runes); i++ {
+		if i < len(runes) && color(i) == color(start) {
+			continue
+		}
+		st := style
+		if c := color(start); c != "" {
+			st = st.Foreground(c)
+		}
+		b.WriteString(st.Render(string(runes[start:i])))
+		start = i
+	}
+	return b.String()
+}

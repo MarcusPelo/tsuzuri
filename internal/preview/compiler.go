@@ -4,6 +4,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/jaisuriya-11/tsuzuri/internal/highlight"
 	"github.com/jaisuriya-11/tsuzuri/internal/theme"
 
 	"github.com/charmbracelet/lipgloss"
@@ -262,10 +263,14 @@ func (c *compiler) codeBlock(lang string, code []string) {
 		c.emit(c.st.codeLang.Render(" " + lang))
 	}
 	inner := max(c.width-4, 6)
+	colors := highlight.Code(lang, strings.Join(code, "\n"), c.st.th)
+	text := lipgloss.NewStyle().Foreground(c.st.th.Fg)
 	for i, l := range code {
-		if ansi.StringWidth(l) > inner {
-			code[i] = ansi.Truncate(l, inner-1, "…")
+		painted := highlight.Render([]rune(l), colors[i], text)
+		if ansi.StringWidth(painted) > inner {
+			painted = ansi.Truncate(painted, inner-1, "…")
 		}
+		code[i] = painted
 	}
 	box := c.st.codeBox.Width(inner + 2).Render(strings.Join(code, "\n"))
 	c.emit(strings.Split(box, "\n")...)

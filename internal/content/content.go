@@ -4,6 +4,7 @@ package content
 
 import (
 	"github.com/jaisuriya-11/tsuzuri/internal/core"
+	"github.com/jaisuriya-11/tsuzuri/internal/highlight"
 	"github.com/jaisuriya-11/tsuzuri/internal/textarea"
 	"github.com/jaisuriya-11/tsuzuri/internal/theme"
 	"github.com/jaisuriya-11/tsuzuri/internal/ui"
@@ -25,6 +26,7 @@ type Model struct {
 	mode     VimMode
 	pending  string // first key of a two-key Vim command ("g", "d")
 	slash    *slashMenu
+	hl       *hlCache // shared across copies so View can memoise
 	width    int
 	height   int
 	focused  bool
@@ -47,6 +49,7 @@ func New(th theme.Theme) Model {
 		textarea: ta,
 		cmdInput: createCommandInput(th),
 		mode:     ModeNormal,
+		hl:       &hlCache{},
 	}
 }
 
@@ -201,6 +204,21 @@ func (m *Model) indent(in bool) {
 		m.textarea.InsertString("  ")
 	}
 	m.textarea.EnsureVisible()
+}
+
+// hlCache memoises syntax colours for the last text/theme rendered.
+type hlCache struct {
+	text  string
+	theme string
+	cols  highlight.Colors
+	valid bool
+}
+
+func (c *hlCache) colors(text string, th theme.Theme) highlight.Colors {
+	if !c.valid || c.text != text || c.theme != th.Name {
+		c.text, c.theme, c.cols, c.valid = text, th.Name, highlight.Markdown(text, th), true
+	}
+	return c.cols
 }
 
 // GotoLine puts the cursor on 1-based line n, scrolled into view.
@@ -409,5 +427,6 @@ func (m Model) View() string {
 		return ui.Fit(lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, block), m.width, m.height, plain)
 	}
 
+	m.textarea.LineColors = m.hl.colors(m.textarea.Value(), m.theme)
 	return ui.Fit(m.textarea.View(), m.width, m.height, plain)
 }

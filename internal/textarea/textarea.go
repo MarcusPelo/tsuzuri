@@ -239,6 +239,10 @@ type Model struct {
 	// there's no limit.
 	MaxHeight int
 
+	// LineColors optionally gives each rune of each line a foreground colour
+	// (syntax highlighting). tsuzuri addition.
+	LineColors [][]lipgloss.Color
+
 	// MaxWidth is the maximum width of the text area in columns. If 0 or less,
 	// there's no limit.
 	MaxWidth int
@@ -1119,7 +1123,10 @@ func (m Model) View() string {
 			style = m.style.computedText()
 		}
 
+		segStart := 0 // tsuzuri: rune offset of this wrapped segment in the line
 		for wl, wrappedLine := range wrappedLines {
+			off := segStart
+			segStart += len(wrappedLine)
 			prompt := m.getPromptString(displayLine)
 			prompt = m.style.computedPrompt().Render(prompt)
 			s.WriteString(style.Render(prompt))
@@ -1166,17 +1173,17 @@ func (m Model) View() string {
 				padding -= m.width - strwidth
 			}
 			if m.row == l && lineInfo.RowOffset == wl {
-				s.WriteString(style.Render(string(wrappedLine[:lineInfo.ColumnOffset])))
+				s.WriteString(m.paint(style, l, off, wrappedLine[:lineInfo.ColumnOffset]))
 				if m.col >= len(line) && lineInfo.CharOffset >= m.width {
 					m.Cursor.SetChar(" ")
 					s.WriteString(m.Cursor.View())
 				} else {
 					m.Cursor.SetChar(string(wrappedLine[lineInfo.ColumnOffset]))
 					s.WriteString(style.Render(m.Cursor.View()))
-					s.WriteString(style.Render(string(wrappedLine[lineInfo.ColumnOffset+1:])))
+					s.WriteString(m.paint(style, l, off+lineInfo.ColumnOffset+1, wrappedLine[lineInfo.ColumnOffset+1:]))
 				}
 			} else {
-				s.WriteString(style.Render(string(wrappedLine)))
+				s.WriteString(m.paint(style, l, off, wrappedLine))
 			}
 			s.WriteString(style.Render(strings.Repeat(" ", max(0, padding))))
 			s.WriteRune('\n')
