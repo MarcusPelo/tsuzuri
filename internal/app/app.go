@@ -63,6 +63,9 @@ type Model struct {
 	themes  *themePicker
 	browser *fileBrowser
 
+	promptBox *promptDialog
+	menuBox   *menuDialog
+
 	configPath string // where the theme choice is saved ("" = don't save)
 	quitting   bool   // "Save All" before quitting is in progress
 
@@ -289,6 +292,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if m.browser != nil {
 		return m, m.browser.update(&m, msg)
 	}
+	if m.promptBox != nil {
+		return m, m.promptBox.update(&m, msg)
+	}
+	if m.menuBox != nil {
+		switch msg.(type) {
+		case tea.KeyMsg, tea.MouseMsg:
+			return m, m.menuBox.update(&m, msg)
+		}
+		return m, nil
+	}
 	if m.showKeymap {
 		switch msg := msg.(type) {
 		case tea.KeyMsg:
@@ -316,6 +329,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.openFile(msg.ID)
 	case core.FindRequestMsg:
 		return m, m.openFinder()
+	case preview.HitMsg:
+		return m, m.handleViewHit(msg.Hit)
 	case core.CopyMsg:
 		return m, m.copyText(msg.Text)
 	case toastExpiredMsg:
@@ -798,6 +813,12 @@ func (m Model) View() string {
 		screen = ui.Overlay(screen, box, x, y)
 	case m.browser != nil:
 		box, x, y := m.browser.view(&m)
+		screen = ui.Overlay(screen, box, x, y)
+	case m.promptBox != nil:
+		box, x, y := m.promptBox.view(&m)
+		screen = ui.Overlay(screen, box, x, y)
+	case m.menuBox != nil:
+		box, x, y := m.menuBox.view(&m)
 		screen = ui.Overlay(screen, box, x, y)
 	case m.viewMode == viewModeWorkspace && m.focus == focusEditor && m.content.SlashOpen():
 		if box, x, y, ok := m.content.SlashView(); ok {

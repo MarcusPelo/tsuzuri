@@ -78,9 +78,12 @@ type compiler struct {
 	st      styles
 	width   int
 	baseDir string // folder relative image paths resolve against
-	cal     CalendarView
-	out     []string
-	para    []string
+	hits    []Hit
+	// Document positions of the block being rendered.
+	lineOffset, fence, fenceEnd int
+	cal                         CalendarView
+	out                         []string
+	para                        []string
 }
 
 func (c *compiler) emit(lines ...string) {
@@ -132,12 +135,21 @@ func CompileIn(input string, th theme.Theme, contentWidth int, baseDir string) s
 
 // CompileWith is CompileIn with a calendar navigation state.
 func CompileWith(input string, th theme.Theme, contentWidth int, baseDir string, cal CalendarView) string {
+	out, _ := CompileHits(input, th, contentWidth, baseDir, cal)
+	return out
+}
+
+// CompileHits compiles and also returns the clickable regions of view
+// blocks (rows in the output, lines in the original document).
+func CompileHits(input string, th theme.Theme, contentWidth int, baseDir string, cal CalendarView) (string, []Hit) {
 	if contentWidth < 10 {
 		contentWidth = 40
 	}
 	c := &compiler{st: newStyles(th), width: contentWidth, baseDir: baseDir, cal: cal}
 
-	meta, input := SplitFrontMatter(input)
+	meta, body := SplitFrontMatter(input)
+	c.lineOffset = strings.Count(input, "\n") - strings.Count(body, "\n")
+	input = body
 	c.header(meta)
 
 	input = htmlCommentRegex.ReplaceAllString(strings.ReplaceAll(input, "\t", "    "), "")
@@ -153,9 +165,11 @@ func CompileWith(input string, th theme.Theme, contentWidth int, baseDir string,
 			fence := trimmed[:3]
 			lang := strings.TrimSpace(trimmed[3:])
 			var code []string
+			open := i
 			for i++; i < len(lines) && !strings.HasPrefix(strings.TrimSpace(lines[i]), fence); i++ {
 				code = append(code, lines[i])
 			}
+			c.fence, c.fenceEnd = c.lineOffset+open, c.lineOffset+i
 			c.codeBlock(lang, code)
 			continue
 		}
@@ -266,7 +280,7 @@ func CompileWith(input string, th theme.Theme, contentWidth int, baseDir string,
 	for len(c.out) > 0 && c.out[len(c.out)-1] == "" {
 		c.out = c.out[:len(c.out)-1]
 	}
-	return strings.Join(c.out, "\n")
+	return strings.Join(c.out, "\n"), c.hits
 }
 
 // callout recognises GitHub-style "[!NOTE]" admonitions.
@@ -283,8 +297,17 @@ func callout(s string) (string, string, bool) {
 }
 
 func (c *compiler) codeBlock(lang string, code []string) {
-	if lines, ok := renderBlock(lang, code, c.st.th, c.width, c.cal); ok {
+	if lines, hits, ok := renderBlock(lang, code, c.st.th, c.width, c.cal); ok {
 		c.blank()
+		base := len(c.out)
+		for _, h := range hits {
+			h.Row += base
+			if h.Line >= 0 {
+				h.Line += c.fence + 1
+			}
+			h.Block, h.End = c.fence, c.fenceEnd
+			c.hits = append(c.hits, h)
+		}
 		for _, l := range lines {
 			if ansi.StringWidth(l) > c.width {
 				l = ansi.Truncate(l, c.width, "")

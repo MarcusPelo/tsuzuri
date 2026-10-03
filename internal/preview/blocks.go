@@ -20,8 +20,28 @@ var now = time.Now
 
 const dateLayout = "2006-01-02"
 
-// renderBlock draws the special fenced blocks (board, calendar, timeline,
-// chart, form). ok is false for ordinary code.
+// Hit is a clickable region of a rendered view block. Inside a renderer Row
+// is relative to the block's first output line and Line to the block body;
+// the compiler turns both into absolute positions (preview row, document
+// line).
+type Hit struct {
+	Row, H int // first row and height (rows)
+	X0, X1 int // columns [X0, X1)
+	Kind   string
+	Line   int // source line of the element (-1 if none)
+	Index  int
+	Arg    string
+	Block  int // document line of the opening fence
+	End    int // document line of the closing fence
+}
+
+func addHit(hs *[]Hit, h Hit) {
+	if h.H == 0 {
+		h.H = 1
+	}
+	*hs = append(*hs, h)
+}
+
 // CalendarView shifts every calendar block while browsing the preview.
 type CalendarView struct {
 	Shift int  // months forward (negative = back)
@@ -31,20 +51,26 @@ type CalendarView struct {
 // calendarNav is the clickable header on every calendar.
 const calendarNav = "‹  Today  ›"
 
-func renderBlock(lang string, body []string, th theme.Theme, width int, cal CalendarView) ([]string, bool) {
+// renderBlock draws the special fenced blocks (board, calendar, timeline,
+// chart, form). ok is false for ordinary code.
+func renderBlock(lang string, body []string, th theme.Theme, width int, cal CalendarView) ([]string, []Hit, bool) {
+	var hs []Hit
+	var out []string
 	switch strings.ToLower(strings.TrimSpace(lang)) {
 	case "board", "kanban":
-		return renderBoard(body, th, width), true
+		out = renderBoard(body, th, width, &hs)
 	case "calendar":
-		return renderCalendar(body, th, width, cal), true
+		out = renderCalendar(body, th, width, cal, &hs)
 	case "timeline", "gantt":
-		return renderTimeline(body, th, width), true
+		out = renderTimeline(body, th, width, &hs)
 	case "chart":
-		return renderChart(body, th, width), true
+		out = renderChart(body, th, width, &hs)
 	case "form":
-		return renderForm(body, th, width), true
+		out = renderForm(body, th, width, &hs)
+	default:
+		return nil, nil, false
 	}
-	return nil, false
+	return out, hs, true
 }
 
 // keyValues parses "key: value" lines (keys lowercased) and returns the
@@ -91,10 +117,12 @@ func center(s string, w int) string {
 type boardCard struct {
 	title string
 	desc  []string
+	line  int
 }
 
 type boardColumn struct {
 	name  string
+	line  int
 	cards []boardCard
 }
 
@@ -113,20 +141,20 @@ func statusColor(name string, i int, th theme.Theme) lipgloss.Color {
 	return palette(th)[(i+2)%len(palette(th))]
 }
 
-func renderBoard(body []string, th theme.Theme, width int) []string {
+func renderBoard(body []string, th theme.Theme, width int, hs *[]Hit) []string {
 	var cols []boardColumn
-	for _, l := range body {
+	for i, l := range body {
 		t := strings.TrimSpace(l)
 		switch {
 		case strings.HasPrefix(t, "#"):
-			cols = append(cols, boardColumn{name: strings.TrimSpace(strings.TrimLeft(t, "#"))})
+			cols = append(cols, boardColumn{name: strings.TrimSpace(strings.TrimLeft(t, "#")), line: i})
 		case strings.HasPrefix(t, "- ") || strings.HasPrefix(t, "* "):
 			if len(cols) == 0 {
-				cols = append(cols, boardColumn{name: "Cards"})
+				cols = append(cols, boardColumn{name: "Cards", line: -1})
 			}
 			card := strings.TrimSpace(t[2:])
 			card = strings.TrimPrefix(strings.TrimPrefix(strings.TrimPrefix(card, "[ ] "), "[x] "), "[X] ")
-			cols[len(cols)-1].cards = append(cols[len(cols)-1].cards, boardCard{title: card})
+			cols[len(cols)-1].cards = append(cols[len(cols)-1].cards, boardCard{title: card, line: i})
 		case t != "" && t != "-" && len(cols) > 0 && len(cols[len(cols)-1].cards) > 0:
 			// Any other text under a card is that card's description.
 			c := &cols[len(cols)-1]
@@ -146,11 +174,14 @@ func renderBoard(body []string, th theme.Theme, width int) []string {
 	}
 
 	var blocks []string
+	type colHits struct{ hits []Hit }
+	perCol := make([]colHits, len(cols))
 	for i, c := range cols {
 		color := statusColor(c.name, i, th)
 		pill := lipgloss.NewStyle().Background(color).Foreground(th.Bg).Bold(true).Render(" ● " + ui.Truncate(c.name, colW-8) + " ")
 		count := lipgloss.NewStyle().Foreground(color).Render(fmt.Sprintf(" %d", len(c.cards)))
 		lines := []string{pill + count}
+		perCol[i].hits = append(perCol[i].hits, Hit{Row: 0, H: 1, X1: colW, Kind: "board:col", Line: c.line, Index: i, Arg: c.name})
 		card := lipgloss.NewStyle().
 			BorderStyle(lipgloss.RoundedBorder()).
 			BorderForeground(th.Line).
@@ -167,8 +198,11 @@ func renderBoard(body []string, th theme.Theme, width int) []string {
 				}
 				body += "\n" + lipgloss.NewStyle().Foreground(th.GreyFg2).Render(strings.Join(desc, "\n"))
 			}
-			lines = append(lines, strings.Split(card.Render(body), "\n")...)
+			rendered := strings.Split(card.Render(body), "\n")
+			perCol[i].hits = append(perCol[i].hits, Hit{Row: len(lines), H: len(rendered), X1: colW, Kind: "board:card", Line: cd.line, Index: i, Arg: cd.title})
+			lines = append(lines, rendered...)
 		}
+		perCol[i].hits = append(perCol[i].hits, Hit{Row: len(lines), H: 1, X1: colW, Kind: "board:add", Line: c.line, Index: i, Arg: c.name})
 		lines = append(lines, lipgloss.NewStyle().Foreground(color).Render(" + New page"))
 		for j := range lines {
 			lines[j] = pad(lines[j], colW)
@@ -176,7 +210,22 @@ func renderBoard(body []string, th theme.Theme, width int) []string {
 		blocks = append(blocks, strings.Join(lines, "\n"))
 	}
 	if stacked {
+		row := 0
+		for i, b := range blocks {
+			for _, h := range perCol[i].hits {
+				h.Row += row
+				addHit(hs, h)
+			}
+			row += strings.Count(b, "\n") + 2
+		}
 		return strings.Split(strings.Join(blocks, "\n\n"), "\n")
+	}
+	for i := range blocks {
+		for _, h := range perCol[i].hits {
+			h.X0 += i * (colW + gap)
+			h.X1 += i * (colW + gap)
+			addHit(hs, h)
+		}
 	}
 	spacer := strings.Repeat(" ", gap)
 	parts := []string{}
@@ -196,12 +245,13 @@ type event struct {
 	date  time.Time
 	end   time.Time
 	title string
+	line  int
 }
 
 // parseEvents reads "2026-10-03: title" lines.
 func parseEvents(lines []string) []event {
 	var out []event
-	for _, l := range lines {
+	for i, l := range lines {
 		d, title, ok := strings.Cut(strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(l), "- ")), ":")
 		if !ok {
 			continue
@@ -210,24 +260,24 @@ func parseEvents(lines []string) []event {
 		if err != nil {
 			continue
 		}
-		out = append(out, event{date: t, title: strings.TrimSpace(title)})
+		out = append(out, event{date: t, title: strings.TrimSpace(title), line: i})
 	}
 	return out
 }
 
-func renderCalendar(body []string, th theme.Theme, width int, cal CalendarView) []string {
-	meta, rest := keyValues(body, "month")
+func renderCalendar(body []string, th theme.Theme, width int, cal CalendarView, hs *[]Hit) []string {
+	meta, _ := keyValues(body, "month")
 	today := now()
 	month := time.Date(today.Year(), today.Month(), 1, 0, 0, 0, 0, time.UTC)
 	if m, err := time.Parse("2006-01", meta["month"]); err == nil && !cal.Today {
 		month = m
 	}
 	month = month.AddDate(0, cal.Shift, 0)
-	events := parseEvents(rest)
-	byDay := map[string][]string{}
+	events := parseEvents(body)
+	byDay := map[string][]event{}
 	for _, e := range events {
 		k := e.date.Format(dateLayout)
-		byDay[k] = append(byDay[k], e.title)
+		byDay[k] = append(byDay[k], e)
 	}
 
 	cw := max(min((width-8)/7, 16), 3)
@@ -244,6 +294,10 @@ func renderCalendar(body []string, th theme.Theme, width int, cal CalendarView) 
 	gridW := 7*cw + 8
 	gap := max(gridW-ansi.StringWidth(title)-ansi.StringWidth(nav), 2)
 	out := []string{title + strings.Repeat(" ", gap) + nav, ""}
+	navX := ansi.StringWidth(title) + gap
+	addHit(hs, Hit{Row: 0, X0: navX, X1: navX + 2, Kind: "cal:prev", Line: -1})
+	addHit(hs, Hit{Row: 0, X0: navX + 3, X1: navX + 8, Kind: "cal:today", Line: -1})
+	addHit(hs, Hit{Row: 0, X0: navX + 9, X1: navX + 12, Kind: "cal:next", Line: -1})
 
 	var head strings.Builder
 	head.WriteString(" ")
@@ -293,12 +347,20 @@ func renderCalendar(body []string, th theme.Theme, width int, cal CalendarView) 
 			}
 			rows[0].WriteString(shade.Render(strings.Repeat(" ", max(cw-ansi.StringWidth(numStr), 0))) + numStr)
 			evs := byDay[key]
+			x0 := 1 + d*(cw+1)
+			rowBase := len(out)
+			if week > 0 {
+				rowBase++ // the separator line is appended first
+			}
+			addHit(hs, Hit{Row: rowBase, H: cellH, X0: x0, X1: x0 + cw, Kind: "cal:day", Line: -1, Arg: key})
 			for r := 1; r < cellH; r++ {
 				cell := ""
 				if i := r - 1; i < len(evs) {
-					label := evs[i]
+					label := evs[i].title
 					if r == cellH-1 && len(evs) > cellH-1 {
 						label = fmt.Sprintf("+%d more", len(evs)-(cellH-2))
+					} else {
+						addHit(hs, Hit{Row: rowBase + r, X0: x0, X1: x0 + cw, Kind: "cal:event", Line: evs[i].line, Arg: evs[i].title})
 					}
 					cell = lipgloss.NewStyle().Background(th.OneBg2).Foreground(th.Fg).Render(ui.Truncate(" "+label, cw-1))
 				}
@@ -322,9 +384,9 @@ func renderCalendar(body []string, th theme.Theme, width int, cal CalendarView) 
 // ---------------------------------------------------------------------------
 // Timeline
 
-func renderTimeline(body []string, th theme.Theme, width int) []string {
+func renderTimeline(body []string, th theme.Theme, width int, hs *[]Hit) []string {
 	var items []event
-	for _, l := range body {
+	for i, l := range body {
 		name, span, ok := strings.Cut(strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(l), "- ")), ":")
 		if !ok {
 			continue
@@ -338,11 +400,12 @@ func renderTimeline(body []string, th theme.Theme, width int) []string {
 		if err2 != nil || end.Before(start) {
 			end = start
 		}
-		items = append(items, event{date: start, end: end, title: strings.TrimSpace(name)})
+		items = append(items, event{date: start, end: end, title: strings.TrimSpace(name), line: i})
 	}
 	muted := lipgloss.NewStyle().Foreground(th.GreyFg)
 	if len(items) == 0 {
-		return []string{muted.Render("(empty timeline: add \"Task: 2026-10-01 -> 2026-10-05\" lines)")}
+		addHit(hs, Hit{Row: 1, X1: 5, Kind: "tl:add", Line: -1})
+		return []string{muted.Render("(empty timeline: add \"Task: 2026-10-01 -> 2026-10-05\" lines)"), muted.Render("+ New")}
 	}
 
 	first, last := items[0].date, items[0].end
@@ -491,8 +554,10 @@ func renderTimeline(body []string, th theme.Theme, width int) []string {
 				row.WriteString(" ")
 			}
 		}
+		addHit(hs, Hit{Row: len(out), X1: width, Kind: "tl:item", Line: it.line, Arg: it.title})
 		out = append(out, row.String())
 	}
+	addHit(hs, Hit{Row: len(out), X1: 5, Kind: "tl:add", Line: -1})
 	out = append(out, muted.Render("+ New"))
 	return out
 }
@@ -503,6 +568,7 @@ func renderTimeline(body []string, th theme.Theme, width int) []string {
 type datum struct {
 	label string
 	value float64
+	line  int
 }
 
 // pixelGrid paints a w×h pixel canvas with half blocks (two pixels per row).
@@ -554,11 +620,15 @@ func fmtNum(v float64) string {
 	return strconv.FormatFloat(v, 'f', 1, 64)
 }
 
-func renderChart(body []string, th theme.Theme, width int) []string {
-	meta, rest := keyValues(body, "type", "title", "height")
+func renderChart(body []string, th theme.Theme, width int, hs *[]Hit) []string {
+	meta, _ := keyValues(body, "type", "title", "height")
 	var data []datum
-	for _, l := range rest {
+	for i, l := range body {
 		k, v, ok := strings.Cut(strings.TrimPrefix(strings.TrimSpace(l), "- "), ":")
+		switch strings.ToLower(strings.TrimSpace(k)) {
+		case "type", "title", "height":
+			continue
+		}
 		if !ok {
 			continue
 		}
@@ -566,7 +636,7 @@ func renderChart(body []string, th theme.Theme, width int) []string {
 		if err != nil {
 			continue
 		}
-		data = append(data, datum{strings.TrimSpace(k), f})
+		data = append(data, datum{strings.TrimSpace(k), f, i})
 	}
 	muted := lipgloss.NewStyle().Foreground(th.GreyFg)
 	var out []string
@@ -574,21 +644,32 @@ func renderChart(body []string, th theme.Theme, width int) []string {
 		out = append(out, lipgloss.NewStyle().Foreground(th.Fg).Bold(true).Render(t), "")
 	}
 	if len(data) == 0 {
-		return append(out, muted.Render("(empty chart: add \"Label: 12\" lines)"))
+		addHit(hs, Hit{Row: len(out) + 1, X1: 13, Kind: "chart:add", Line: -1})
+		return append(out, muted.Render("(empty chart: add \"Label: 12\" lines)"), muted.Render("+ Add value"))
 	}
 	height := 10
 	if h, err := strconv.Atoi(meta["height"]); err == nil && h >= 3 && h <= 30 {
 		height = h
 	}
+	var chart []string
+	var local []Hit
 	switch strings.ToLower(meta["type"]) {
 	case "hbar", "barh", "horizontal":
-		return append(out, hbarChart(data, th, width)...)
+		chart = hbarChart(data, th, width, &local)
 	case "line":
-		return append(out, lineChart(data, th, width, height)...)
+		chart = lineChart(data, th, width, height, &local)
 	case "pie", "donut":
-		return append(out, pieChart(data, th, width, strings.ToLower(meta["type"]) == "donut")...)
+		chart = pieChart(data, th, width, strings.ToLower(meta["type"]) == "donut", &local)
+	default:
+		chart = barChart(data, th, width, height, &local)
 	}
-	return append(out, barChart(data, th, width, height)...)
+	for _, h := range local {
+		h.Row += len(out)
+		addHit(hs, h)
+	}
+	out = append(out, chart...)
+	addHit(hs, Hit{Row: len(out), X1: 13, Kind: "chart:add", Line: -1})
+	return append(out, muted.Render("+ Add value"))
 }
 
 func maxValue(data []datum) float64 {
@@ -602,7 +683,7 @@ func maxValue(data []datum) float64 {
 	return m
 }
 
-func barChart(data []datum, th theme.Theme, width, height int) []string {
+func barChart(data []datum, th theme.Theme, width, height int, hs *[]Hit) []string {
 	maxV := maxValue(data)
 	axisW := len(fmtNum(maxV)) + 1
 	slot := min(max((width-axisW-1)/len(data), 2), 10)
@@ -642,10 +723,13 @@ func barChart(data []datum, th theme.Theme, width, height int) []string {
 	}
 	out = append(out, strings.Repeat(" ", axisW)+muted.Render(labels.String()))
 	out = append(out, strings.Repeat(" ", axisW)+values.String())
+	for i, d := range data {
+		addHit(hs, Hit{Row: 0, H: len(out), X0: axisW + i*slot, X1: axisW + i*slot + bw, Kind: "chart:value", Line: d.line, Arg: d.label})
+	}
 	return out
 }
 
-func hbarChart(data []datum, th theme.Theme, width int) []string {
+func hbarChart(data []datum, th theme.Theme, width int, hs *[]Hit) []string {
 	maxV := maxValue(data)
 	labelW := 0
 	for _, d := range data {
@@ -662,6 +746,7 @@ func hbarChart(data []datum, th theme.Theme, width int) []string {
 		if frac := n - float64(full); frac > 0.5 {
 			bar += "▌"
 		}
+		addHit(hs, Hit{Row: len(out), X1: width, Kind: "chart:value", Line: d.line, Arg: d.label})
 		out = append(out, pad(ui.Truncate(d.label, labelW), labelW)+" "+
 			lipgloss.NewStyle().Foreground(cols[i%len(cols)]).Render(bar)+" "+
 			lipgloss.NewStyle().Foreground(th.GreyFg2).Render(fmtNum(d.value)))
@@ -669,7 +754,7 @@ func hbarChart(data []datum, th theme.Theme, width int) []string {
 	return out
 }
 
-func lineChart(data []datum, th theme.Theme, width, height int) []string {
+func lineChart(data []datum, th theme.Theme, width, height int, hs *[]Hit) []string {
 	minV, maxV := data[0].value, data[0].value
 	for _, d := range data {
 		minV, maxV = math.Min(minV, d.value), math.Max(maxV, d.value)
@@ -739,10 +824,24 @@ func lineChart(data []datum, th theme.Theme, width, height int) []string {
 		}
 	}
 	out = append(out, strings.Repeat(" ", axisW)+muted.Render(string(labels)))
+	// Each point owns the columns closest to it.
+	for i, d := range data {
+		x, _ := pt(i)
+		left, right := 0, plotW
+		if i > 0 {
+			px, _ := pt(i - 1)
+			left = (px + x + 1) / 2
+		}
+		if i+1 < len(data) {
+			nx, _ := pt(i + 1)
+			right = (x + nx + 1) / 2
+		}
+		addHit(hs, Hit{Row: 0, H: len(out), X0: axisW + left, X1: axisW + right, Kind: "chart:value", Line: d.line, Arg: d.label})
+	}
 	return out
 }
 
-func pieChart(data []datum, th theme.Theme, width int, donut bool) []string {
+func pieChart(data []datum, th theme.Theme, width int, donut bool, hs *[]Hit) []string {
 	total := 0.0
 	for _, d := range data {
 		total += math.Max(d.value, 0)
@@ -784,6 +883,9 @@ func pieChart(data []datum, th theme.Theme, width int, donut bool) []string {
 			lipgloss.NewStyle().Foreground(th.Fg).Render(ui.Truncate(d.label, max(width-size-16, 6)))+
 			lipgloss.NewStyle().Foreground(th.GreyFg2).Render(fmt.Sprintf("  %s (%.0f%%)", fmtNum(d.value), pct)))
 	}
+	for i, d := range data {
+		addHit(hs, Hit{Row: i, X0: size + 3, X1: width, Kind: "chart:value", Line: d.line, Arg: d.label})
+	}
 	out := make([]string, max(len(pie), len(legend)))
 	for i := range out {
 		left := strings.Repeat(" ", size)
@@ -819,20 +921,70 @@ func sign(x int) int {
 // ---------------------------------------------------------------------------
 // Form
 
-func renderForm(body []string, th theme.Theme, width int) []string {
-	meta, rest := keyValues(body, "title", "description")
+// formQuestion is one "? ..." line plus its "= answer" line, if any.
+type formQuestion struct {
+	text, kind string
+	required   bool
+	options    []string
+	line       int
+	answer     string
+}
+
+func parseForm(body []string) []formQuestion {
+	var qs []formQuestion
+	for i, l := range body {
+		t := strings.TrimSpace(l)
+		switch {
+		case strings.HasPrefix(t, "?"):
+			q := formQuestion{line: i, kind: "text", required: strings.HasPrefix(t, "?*")}
+			t = strings.TrimSpace(strings.TrimLeft(t, "?*"))
+			text, opts, _ := strings.Cut(t, ":")
+			if j := strings.LastIndex(text, "("); j > 0 && strings.HasSuffix(strings.TrimSpace(text), ")") {
+				q.kind = strings.ToLower(strings.TrimSuffix(strings.TrimSpace(text[j+1:]), ")"))
+				text = strings.TrimSpace(text[:j])
+			}
+			q.text = strings.TrimSpace(text)
+			for _, o := range strings.Split(opts, "|") {
+				if o = strings.TrimSpace(o); o != "" {
+					q.options = append(q.options, o)
+				}
+			}
+			qs = append(qs, q)
+		case strings.HasPrefix(t, "=") && len(qs) > 0:
+			qs[len(qs)-1].answer = strings.TrimSpace(t[1:])
+		}
+	}
+	return qs
+}
+
+func renderForm(body []string, th theme.Theme, width int, hs *[]Hit) []string {
+	meta, _ := keyValues(body, "title", "description")
 	w := min(width, 64)
 	text := lipgloss.NewStyle().Foreground(th.Fg)
 	muted := lipgloss.NewStyle().Foreground(th.GreyFg2)
 	faint := lipgloss.NewStyle().Foreground(th.GreyFg)
+	accent := lipgloss.NewStyle().Foreground(th.Blue)
 
+	lineOf := func(key string) int {
+		for i, l := range body {
+			if k, _, ok := strings.Cut(l, ":"); ok && strings.EqualFold(strings.TrimSpace(k), key) {
+				return i
+			}
+		}
+		return -1
+	}
 	title := meta["title"]
 	if title == "" {
 		title = "Form title"
 	}
+	addHit(hs, Hit{Row: 0, X1: w, Kind: "form:title", Line: lineOf("title"), Arg: meta["title"]})
 	out := []string{text.Bold(true).Render(strings.ToUpper(title[:1]) + title[1:])}
-	if d := meta["description"]; d != "" {
-		out = append(out, muted.Render(d))
+	desc := meta["description"]
+	addHit(hs, Hit{Row: 1, X1: w, Kind: "form:desc", Line: lineOf("description"), Arg: desc})
+	if desc == "" {
+		out = append(out, faint.Render("Description (optional)"))
+	} else {
+		out = append(out, muted.Render(desc))
 	}
 	out = append(out, "")
 
@@ -844,65 +996,97 @@ func renderForm(body []string, th theme.Theme, width int) []string {
 	input := lipgloss.NewStyle().
 		BorderStyle(lipgloss.RoundedBorder()).
 		BorderForeground(th.OneBg3).
-		Foreground(th.GreyFg).
 		Width(w - 6)
 
-	n := 0
-	for _, l := range rest {
-		t := strings.TrimSpace(l)
-		if !strings.HasPrefix(t, "?") {
-			continue
+	qs := parseForm(body)
+	for _, q := range qs {
+		var lines []string
+		var local []Hit
+		mark := func(kind string, h, idx int) {
+			local = append(local, Hit{Row: len(lines), H: h, X1: w, Kind: kind, Line: q.line, Index: idx, Arg: q.text})
 		}
-		n++
-		required := strings.HasPrefix(t, "?*")
-		t = strings.TrimSpace(strings.TrimLeft(t, "?*"))
-		q, opts, _ := strings.Cut(t, ":")
-		kind := "text"
-		if i := strings.LastIndex(q, "("); i > 0 && strings.HasSuffix(strings.TrimSpace(q), ")") {
-			kind = strings.ToLower(strings.TrimSuffix(strings.TrimSpace(q[i+1:]), ")"))
-			q = strings.TrimSpace(q[:i])
-		}
-		head := text.Bold(true).Render(q)
-		if required {
+		head := text.Bold(true).Render(q.text)
+		if q.required {
 			head += lipgloss.NewStyle().Foreground(th.Red).Render(" *")
 		}
-		lines := []string{head}
-		var options []string
-		for _, o := range strings.Split(opts, "|") {
-			if o = strings.TrimSpace(o); o != "" {
-				options = append(options, o)
+		mark("form:question", 1, 0)
+		lines = append(lines, head)
+
+		answerBox := func(placeholder string, height int) {
+			body := faint.Render(" " + placeholder)
+			if q.answer != "" {
+				body = text.Render(" " + q.answer)
 			}
+			st := input
+			if height > 1 {
+				st = st.Height(height)
+			}
+			box := strings.Split(st.Render(body), "\n")
+			mark("form:text", len(box), 0)
+			lines = append(lines, box...)
 		}
-		switch kind {
+		chosen := map[string]bool{}
+		for _, a := range strings.Split(q.answer, ",") {
+			chosen[strings.TrimSpace(a)] = true
+		}
+		switch q.kind {
 		case "choice", "select", "radio":
 			lines = append(lines, faint.Render("(Respondents can select up to 1)"))
-			for _, o := range options {
-				lines = append(lines, muted.Render("○ ")+text.Render(o))
+			for i, o := range q.options {
+				mark("form:option", 1, i)
+				if chosen[o] {
+					lines = append(lines, accent.Render("● ")+text.Bold(true).Render(o))
+				} else {
+					lines = append(lines, muted.Render("○ ")+text.Render(o))
+				}
 			}
+			mark("form:addopt", 1, 0)
 			lines = append(lines, faint.Render("+ Add option"))
 		case "multi", "checkbox", "checkboxes":
-			lines = append(lines, faint.Render(fmt.Sprintf("(Respondents can select up to %d)", len(options))))
-			for _, o := range options {
-				lines = append(lines, muted.Render("☐ ")+text.Render(o))
+			lines = append(lines, faint.Render(fmt.Sprintf("(Respondents can select up to %d)", len(q.options))))
+			for i, o := range q.options {
+				mark("form:multi", 1, i)
+				if chosen[o] {
+					lines = append(lines, accent.Render("☑ ")+text.Bold(true).Render(o))
+				} else {
+					lines = append(lines, muted.Render("☐ ")+text.Render(o))
+				}
 			}
+			mark("form:addopt", 1, 0)
 			lines = append(lines, faint.Render("+ Add option"))
 		case "rating":
-			lines = append(lines, lipgloss.NewStyle().Foreground(th.Yellow).Render("☆ ☆ ☆ ☆ ☆"))
+			n, _ := strconv.Atoi(q.answer)
+			var stars []string
+			for i := 1; i <= 5; i++ {
+				if i <= n {
+					stars = append(stars, "★")
+				} else {
+					stars = append(stars, "☆")
+				}
+				local = append(local, Hit{Row: len(lines), H: 1, X0: 2 + (i-1)*2, X1: 4 + (i-1)*2, Kind: "form:rating", Line: q.line, Index: i, Arg: q.text})
+			}
+			lines = append(lines, lipgloss.NewStyle().Foreground(th.Yellow).Render(strings.Join(stars, " ")))
 		case "date":
-			lines = append(lines, input.Render(" 󰃭 Pick a date"))
+			answerBox("󰃭 Pick a date (YYYY-MM-DD)", 1)
 		case "long", "paragraph":
-			lines = append(lines, input.Height(3).Render(" Long answer"))
+			answerBox("Long answer", 3)
 		case "email":
-			lines = append(lines, input.Render(" name@example.com"))
+			answerBox("name@example.com", 1)
 		default:
-			lines = append(lines, input.Render(" Respondent's answer"))
+			answerBox("Respondent's answer", 1)
+		}
+		cardStart := len(out)
+		for _, h := range local {
+			h.Row += cardStart + 1 // top border
+			addHit(hs, h)
 		}
 		out = append(out, strings.Split(card.Render(strings.Join(lines, "\n")), "\n")...)
 		out = append(out, "")
 	}
-	if n == 0 {
+	if len(qs) == 0 {
 		out = append(out, faint.Render("(add questions: \"? Question\", \"? Pick one (choice): A | B\")"))
 	}
-	out = append(out, center(lipgloss.NewStyle().Foreground(th.Blue).Render("⊕ add question"), w))
+	addHit(hs, Hit{Row: len(out), X1: w, Kind: "form:addq", Line: -1})
+	out = append(out, center(accent.Render("⊕ add question"), w))
 	return out
 }

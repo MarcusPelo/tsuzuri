@@ -21,6 +21,13 @@ All notable changes to this project are documented here. The format follows
 - Table editing: Tab between cells (adds rows), `:addrow`, `:addcol`,
   `:delrow`, `:delcol`, `:tablefmt` and table actions in the `/` menu, with
   automatic column alignment.
+- Views are interactive in the preview: board (add/move/rename/delete
+  cards and columns), calendar (add/move/rename/delete events), timeline
+  (add, shift, extend, set dates), charts (edit/add/delete values) and forms
+  (fill text, choice, multi-select and rating answers; add options and
+  questions). All edits are written back into the Markdown.
+- Rows no longer shift when text contains emoji variation selectors or
+  zero-width joiners (e.g. ☁️), which broke the pane dividers.
 - Calendars can be browsed month by month in the preview (`<` `>` `T`, or
   click `‹ Today ›`) without editing the note.
 - Board, calendar, timeline, chart (pixel art: bar/hbar/line/pie/donut) and

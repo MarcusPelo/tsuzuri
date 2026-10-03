@@ -11,7 +11,6 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/charmbracelet/x/ansi"
 )
 
 // Model represents the real-time compiled Markdown preview component.
@@ -25,6 +24,7 @@ type Model struct {
 	rawContent string
 	baseDir    string
 	cal        CalendarView
+	hits       []Hit
 	focused    bool
 	ready      bool
 }
@@ -114,7 +114,8 @@ func (m *Model) recompile() {
 	if vpWidth <= 0 {
 		vpWidth = m.width - 2
 	}
-	compiled := CompileWith(m.rawContent, m.theme, vpWidth, m.baseDir, m.cal)
+	compiled, hits := CompileHits(m.rawContent, m.theme, vpWidth, m.baseDir, m.cal)
+	m.hits = hits
 	m.viewport.SetContent(compiled)
 }
 
@@ -129,30 +130,39 @@ func (m *Model) ShiftCalendars(delta int, today bool) {
 	m.recompile()
 }
 
-// clickCalendarNav handles a click on a calendar's "‹  Today  ›" header.
-func (m *Model) clickCalendarNav(x, y int) bool {
-	lines := strings.Split(m.viewport.View(), "\n")
-	if y < 0 || y >= len(lines) {
-		return false
+// HitMsg reports a click on an interactive part of a view block.
+type HitMsg struct{ Hit Hit }
+
+// HitAt returns the view element under pane coordinates (x, y).
+func (m Model) HitAt(x, y int) (Hit, bool) {
+	row := m.viewport.YOffset + y
+	col := x - 1 // one column of left padding
+	for i := len(m.hits) - 1; i >= 0; i-- {
+		h := m.hits[i]
+		if row >= h.Row && row < h.Row+h.H && col >= h.X0 && col < h.X1 {
+			return h, true
+		}
 	}
-	plain := ansi.Strip(lines[y])
-	i := strings.Index(plain, calendarNav)
-	if i < 0 {
-		return false
+	return Hit{}, false
+}
+
+// click handles calendar navigation itself and reports everything else.
+func (m *Model) click(x, y int) tea.Cmd {
+	h, ok := m.HitAt(x, y)
+	if !ok {
+		return nil
 	}
-	start := ansi.StringWidth(plain[:i])
-	col := x - 1 - start // one column of left padding
-	switch {
-	case col >= 0 && col <= 1:
+	switch h.Kind {
+	case "cal:prev":
 		m.ShiftCalendars(-1, false)
-	case col >= 3 && col <= 7:
-		m.ShiftCalendars(0, true)
-	case col >= 9 && col <= 11:
+	case "cal:next":
 		m.ShiftCalendars(1, false)
+	case "cal:today":
+		m.ShiftCalendars(0, true)
 	default:
-		return false
+		return func() tea.Msg { return HitMsg{Hit: h} }
 	}
-	return true
+	return nil
 }
 
 // ScrollBy scrolls the preview by n lines (negative scrolls up).
@@ -175,7 +185,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			m.ScrollBy(3)
 		case tea.MouseButtonLeft:
 			if msg.Action == tea.MouseActionPress {
-				m.clickCalendarNav(msg.X, msg.Y)
+				return m, m.click(msg.X, msg.Y)
 			}
 		}
 		return m, nil

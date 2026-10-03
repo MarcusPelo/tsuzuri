@@ -231,6 +231,14 @@ func (c *hlCache) colors(text string, th theme.Theme) highlight.Colors {
 	return c.cols
 }
 
+// ReplaceText swaps the whole buffer text, keeping the cursor where it was
+// (clamped). Used when the preview edits the note.
+func (m *Model) ReplaceText(text string) {
+	row, col := m.textarea.RowCol()
+	m.textarea.SetValue(text)
+	m.textarea.SetRowCol(row, col)
+}
+
 // GotoLine puts the cursor on 1-based line n, scrolled into view.
 func (m *Model) GotoLine(n int) { m.textarea.GotoLine(n) }
 

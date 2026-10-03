@@ -30,8 +30,23 @@ func Fit(s string, w, h int, fill lipgloss.Style) string {
 	return strings.Join(lines, "\n")
 }
 
+// invisible lists code points whose rendered width terminals disagree on
+// (emoji variation selectors, zero-width joiners). Dropping them before
+// measuring keeps every row exactly as wide as we think it is.
+var invisible = strings.NewReplacer(
+	"\uFE0F", "", // VS16: emoji presentation (☁️ is 1 or 2 cells depending on the terminal)
+	"\uFE0E", "", // VS15: text presentation
+	"\u200D", "", // zero-width joiner
+	"\u200B", "", // zero-width space
+	"\u2060", "", // word joiner
+)
+
+// Sanitize removes characters whose display width is terminal-dependent.
+func Sanitize(s string) string { return invisible.Replace(s) }
+
 // FitLine truncates or pads a single line to exactly w columns.
 func FitLine(l string, w int, fill lipgloss.Style) string {
+	l = Sanitize(l)
 	lw := ansi.StringWidth(l)
 	if lw > w {
 		l = ansi.Truncate(l, w, "")

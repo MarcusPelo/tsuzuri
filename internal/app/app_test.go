@@ -714,3 +714,132 @@ func TestSlashCoverSetsFrontMatter(t *testing.T) {
 		t.Fatalf("expected cover front matter, got %q", got.Content)
 	}
 }
+
+// openWith opens a single note with the given text, preview visible.
+func openWith(t *testing.T, text string) *harness {
+	t.Helper()
+	store := newTestStore(t)
+	if _, err := store.SaveAs("", "views", text); err != nil {
+		t.Fatal(err)
+	}
+	h := newHarness(t, store)
+	h.keys("1")
+	h.key(tea.KeyEsc)
+	return h
+}
+
+// clickText clicks the first occurrence of text in the right half (preview).
+func (h *harness) clickText(text string) {
+	h.t.Helper()
+	for y, l := range strings.Split(h.view(), "\n") {
+		half := []rune(l)
+		if len(half) < termW/2 {
+			continue
+		}
+		right := string(half[termW/2:])
+		if i := strings.Index(right, text); i >= 0 {
+			h.click(termW/2+ansi.StringWidth(right[:i]), y)
+			return
+		}
+	}
+	h.t.Fatalf("%q not in preview:\n%s", text, h.view())
+}
+
+// clickLeftmost clicks the occurrence of text furthest left in the preview.
+func (h *harness) clickLeftmost(text string) {
+	h.t.Helper()
+	bx, by := -1, -1
+	for y, l := range strings.Split(h.view(), "\n") {
+		r := []rune(l)
+		if len(r) < termW/2 {
+			continue
+		}
+		right := string(r[termW/2:])
+		if i := strings.Index(right, text); i >= 0 {
+			if x := termW/2 + ansi.StringWidth(right[:i]); bx < 0 || x < bx {
+				bx, by = x, y
+			}
+		}
+	}
+	if bx < 0 {
+		h.t.Fatalf("%q not in preview", text)
+	}
+	h.click(bx, by)
+}
+
+func (h *harness) text() string {
+	h.t.Helper()
+	h.send(tea.KeyMsg{Type: tea.KeyCtrlS})
+	p, err := h.store.Get("views.md")
+	if err != nil {
+		h.t.Fatal(err)
+	}
+	return p.Content
+}
+
+func TestInteractiveBoard(t *testing.T) {
+	h := openWith(t, "```board\n## Todo\n- Write\n  details\n## Done\n- Ship\n```")
+	h.clickLeftmost("+ New page")
+	h.keys("Review")
+	h.key(tea.KeyEnter)
+	if got := h.text(); !strings.Contains(got, "- Write\n  details\n- Review\n## Done") {
+		t.Fatalf("new card should go at the end of Todo:\n%s", got)
+	}
+	h.clickText("Write")
+	if v := h.view(); !strings.Contains(v, "Move to → Done") {
+		t.Fatalf("expected card menu:\n%s", v)
+	}
+	h.keys("2") // Move to → Done
+	if got := h.text(); !strings.Contains(got, "## Done\n- Ship\n- Write\n  details") {
+		t.Fatalf("card (with description) should move to Done:\n%s", got)
+	}
+}
+
+func TestInteractiveFormCalendarTimelineChart(t *testing.T) {
+	h := openWith(t, "```form\ntitle: Survey\n? Name\n? Pick (choice): A | B\n? Rate (rating)\n```")
+	h.clickText("Respondent's answer")
+	h.keys("Jai")
+	h.key(tea.KeyEnter)
+	h.clickText("○ B")
+	if got := h.text(); !strings.Contains(got, "? Name\n  = Jai\n? Pick (choice): A | B\n  = B") {
+		t.Fatalf("form answers not stored:\n%s", got)
+	}
+	h.clickText("● B") // clicking again clears it
+	if got := h.text(); strings.Contains(got, "= B") {
+		t.Fatalf("second click should clear the choice:\n%s", got)
+	}
+
+	h = openWith(t, "```calendar\nmonth: 2026-10\n2026-10-15: Launch\n```")
+	h.clickText(" 20 ")
+	h.keys("Party")
+	h.key(tea.KeyEnter)
+	if got := h.text(); !strings.Contains(got, "2026-10-20: Party") {
+		t.Fatalf("clicking a day should add an event:\n%s", got)
+	}
+
+	h = openWith(t, "```timeline\nAlpha: 2026-10-01 -> 2026-10-04\n```")
+	h.clickText("Alpha")
+	h.keys("5") // Extend by 1 day
+	if got := h.text(); !strings.Contains(got, "Alpha: 2026-10-01 -> 2026-10-05") {
+		t.Fatalf("extend should move the end date:\n%s", got)
+	}
+
+	h = openWith(t, "```chart\ntype: hbar\nGo: 5\nRust: 2\n```")
+	h.clickText("Rust")
+	h.keys("1")
+	for range "2" {
+		h.key(tea.KeyBackspace)
+	}
+	h.keys("9")
+	h.key(tea.KeyEnter)
+	if got := h.text(); !strings.Contains(got, "Rust: 9") {
+		t.Fatalf("editing a chart value should rewrite its line:\n%s", got)
+	}
+}
+
+func TestEmojiVariationSelectorsNeverReachTheScreen(t *testing.T) {
+	h := openWith(t, "icon: ☁️ and 👨‍👩‍👧 family\n\n☁️ cloud")
+	if v := h.m.View(); strings.ContainsAny(v, "️‍") {
+		t.Fatal("variation selectors / joiners must be stripped so rows keep their width")
+	}
+}

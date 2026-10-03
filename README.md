@@ -43,6 +43,7 @@
   Feb: 20
   ```
   ````
+- **Interactive views.** Click in the preview to work with them: add or move board cards, add events by clicking a calendar day, shift or stretch timeline bars, edit chart values, and fill in forms (answers are saved under each question as `= answer`). Every change edits the note's text, so it stays plain Markdown.
 - **Page covers.** `/cover` picks a banner image; it's stored as front matter and drawn across the top of the preview as pixel art, Notion-style. Add `icon: ☁️` for a page icon:
 
   ```markdown
