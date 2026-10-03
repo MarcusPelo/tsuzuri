@@ -29,7 +29,7 @@
 - **Edits are never lost by accident.** Unsaved changes survive tab switches, closing a dirty tab asks *Save / Don't Save / Cancel*, quitting offers *Save All*, and deleting a file asks first.
 - **Vim editing.** `NORMAL`, `INSERT` and `COMMAND` modes with motions (`hjkl`, `w`/`b`, `0`/`$`, `gg`/`G`, `Ctrl+D`/`Ctrl+U`), `x`, `dd`, `o`/`O`, and `:w`, `:w name`, `:wq`, `:q!`, `:bd`, `:enew`.
 - **Mouse everywhere.** Click tabs, close buttons, the `+` button, tree rows and the editor (places the cursor). The wheel scrolls whichever pane is under the pointer.
-- **Live preview.** Headings, checklists, callouts, code blocks and tables render as you type. Toggle it from the tabline or with `Space p`.
+- **Live preview.** Headings, checklists, callouts, code blocks and tables render as you type. Toggle it with `Space p`.
 - **96 NvChad themes.** Every base46 theme (onedark, catppuccin, gruvbox, tokyonight, rosepine, nord, everforest, kanagawa, the light ones …). `Space t` opens a picker that previews as you move; the choice is remembered.
 - **Global finder.** `Ctrl+P` (or `f` on the start screen) opens a Telescope-style fuzzy finder with a file preview. `Enter` opens the note in the current tab, `Ctrl+T` in a new one.
 - **Notion-style nesting.** A note can have sub-notes: `Project.md` plus a sibling `Project/` folder.

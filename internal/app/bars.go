@@ -12,7 +12,7 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// Tabufline (top row): explorer label, buffer tabs, "+" and preview toggle.
+// Tabufline (top row): buffer tabs and a "+" button.
 
 type tabHit int
 
@@ -21,7 +21,6 @@ const (
 	hitTab
 	hitClose
 	hitNew
-	hitPreview
 	hitExplorer
 )
 
@@ -81,15 +80,8 @@ func (m *Model) tabline() (string, []tabSpan) {
 		x = w
 	}
 
-	// Right-hand buttons.
-	pvFg := th.GreyFg
-	if m.previewOpen {
-		pvFg = th.Yellow
-	}
-	preview := fill.Foreground(pvFg).Render(" 󰈈 Preview ")
 	plus := fill.Foreground(th.GreyFg2).Render("  ")
-	rightW := lipgloss.Width(preview)
-	avail := m.width - x - rightW - lipgloss.Width(plus)
+	avail := m.width - x - lipgloss.Width(plus)
 
 	// Lay out tabs, sliding the window so the active tab is visible.
 	type rendered struct {
@@ -142,13 +134,6 @@ func (m *Model) tabline() (string, []tabSpan) {
 	spans = append(spans, tabSpan{kind: hitNew, start: x, end: x + lipgloss.Width(plus)})
 	x += lipgloss.Width(plus)
 
-	gap := m.width - x - rightW
-	if gap > 0 {
-		b.WriteString(fill.Render(strings.Repeat(" ", gap)))
-		x += gap
-	}
-	b.WriteString(preview)
-	spans = append(spans, tabSpan{kind: hitPreview, start: x, end: x + rightW})
 	return ui.FitLine(b.String(), m.width, fill), spans
 }
 

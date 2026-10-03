@@ -667,8 +667,6 @@ func (m *Model) handleTabClick(msg tea.MouseMsg) tea.Cmd {
 		return m.closeBuffer(hit.id, false)
 	case hitNew:
 		return m.newDraft(m.sidebar.ContextParentID())
-	case hitPreview:
-		return m.togglePreview()
 	case hitExplorer:
 		return m.focusPane(focusSidebar)
 	}
