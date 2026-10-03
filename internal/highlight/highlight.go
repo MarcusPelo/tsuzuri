@@ -21,6 +21,12 @@ type Colors [][]lipgloss.Color
 // analysis and then plain text.
 func lexerFor(lang, code string) chroma.Lexer {
 	var l chroma.Lexer
+	switch strings.ToLower(lang) {
+	case "board", "kanban":
+		lang = "markdown"
+	case "calendar", "timeline", "gantt", "chart", "form":
+		lang = "yaml"
+	}
 	if lang != "" {
 		l = lexers.Get(lang)
 	}

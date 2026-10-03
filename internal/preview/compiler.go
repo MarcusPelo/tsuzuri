@@ -277,6 +277,17 @@ func callout(s string) (string, string, bool) {
 }
 
 func (c *compiler) codeBlock(lang string, code []string) {
+	if lines, ok := renderBlock(lang, code, c.st.th, c.width); ok {
+		c.blank()
+		for _, l := range lines {
+			if ansi.StringWidth(l) > c.width {
+				l = ansi.Truncate(l, c.width, "")
+			}
+			c.out = append(c.out, l) // keep blank rows inside the block
+		}
+		c.blank()
+		return
+	}
 	c.blank()
 	if lang != "" {
 		c.emit(c.st.codeLang.Render(" " + lang))

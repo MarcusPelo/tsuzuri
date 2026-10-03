@@ -2,6 +2,7 @@ package content
 
 import (
 	"strings"
+	"time"
 
 	"github.com/jaisuriya-11/tsuzuri/internal/core"
 	"github.com/jaisuriya-11/tsuzuri/internal/ui"
@@ -38,6 +39,11 @@ var slashItems = []slashItem{
 	{section: "Basic blocks", icon: "\U000f04eb", label: "Table", aliases: "grid", before: "| ", after: " | Column 2 |\n| --- | --- |\n|  |  |", block: true},
 	{section: "Basic blocks", icon: "\U000f0374", label: "Divider", hint: "---", aliases: "hr rule line separator", before: "---\n", block: true},
 	{section: "Basic blocks", icon: "\U000f0337", label: "Link to page", aliases: "mention reference note", action: "link"},
+	{section: "Views", icon: "\U000f0564", label: "Board", hint: "kanban", aliases: "kanban status tasks", before: "```board\n## Not started\n- ", after: "\n## In progress\n- Card 2\n## Done\n- Card 3\n```", block: true},
+	{section: "Views", icon: "\U000f00ed", label: "Calendar", aliases: "month events dates", before: "```calendar\nmonth: " + time.Now().Format("2006-01") + "\n" + time.Now().Format("2006-01-02") + ": ", after: "\n```", block: true},
+	{section: "Views", icon: "\U000f0b77", label: "Timeline", hint: "gantt", aliases: "gantt schedule roadmap", before: "```timeline\n", after: "Card 1: " + time.Now().AddDate(0, 0, -3).Format("2006-01-02") + " -> " + time.Now().AddDate(0, 0, 2).Format("2006-01-02") + "\nCard 2: " + time.Now().Format("2006-01-02") + " -> " + time.Now().AddDate(0, 0, 4).Format("2006-01-02") + "\n```", block: true},
+	{section: "Views", icon: "\U000f0128", label: "Chart", hint: "bar line pie", aliases: "graph plot bar line pie donut hbar", before: "```chart\ntype: bar\ntitle: ", after: "\nJan: 12\nFeb: 20\nMar: 7\nApr: 15\n```", block: true},
+	{section: "Views", icon: "\U000f0b4b", label: "Form", aliases: "survey questions questionnaire", before: "```form\ntitle: ", after: "\ndescription: Optional description\n? Question 1\n? Question 2 (choice): Option 1 | Option 2 | Option 3\n```", block: true},
 	{section: "Media", icon: "\U000f0e7c", label: "Cover", hint: "banner", aliases: "banner header hero", action: "media:cover"},
 	{section: "Media", icon: "\U000f02e9", label: "Image", aliases: "picture photo img upload", action: "media:image"},
 	{section: "Media", icon: "\U000f0567", label: "Video", aliases: "movie upload", action: "media:video"},

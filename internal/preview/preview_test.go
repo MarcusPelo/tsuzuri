@@ -123,3 +123,31 @@ func TestCompilerRegressions(t *testing.T) {
 		t.Errorf("expected blank lines collapsed:\n%s", plain)
 	}
 }
+
+func TestViewBlocks(t *testing.T) {
+	th := theme.DefaultTheme()
+	cases := map[string][]string{
+		"```board\n## Todo\n- A\n## Done\n- B\n```":                                     {"● Todo", "● Done", "A", "B", "+ New page"},
+		"```calendar\nmonth: 2026-10\n2026-10-15: Launch\n```":                          {"October 2026", "Sun", "Sat", "Laun", "31"},
+		"```timeline\nAlpha: 2026-10-01 -> 2026-10-04\n```":                             {"Alpha", "October"},
+		"```chart\ntype: bar\ntitle: Sales\nJan: 3\nFeb: 6\n```":                        {"Sales", "Jan", "Feb", "█"},
+		"```chart\ntype: hbar\nGo: 5\nRust: 2\n```":                                     {"Go", "Rust", "█"},
+		"```chart\ntype: line\nA: 1\nB: 5\nC: 2\n```":                                   {"┤", "A", "C"},
+		"```chart\ntype: pie\nYes: 3\nNo: 1\n```":                                       {"Yes", "75%", "No", "25%"},
+		"```form\ntitle: Survey\n?* Name\n? Pick (choice): X | Y\n? Rate (rating)\n```": {"Survey", "Name *", "○ X", "☆ ☆"},
+	}
+	for src, wants := range cases {
+		out := preview.Compile(src, th, 60)
+		plain := ansi.Strip(out)
+		for _, w := range wants {
+			if !strings.Contains(plain, w) {
+				t.Errorf("%q: missing %q in\n%s", src[:12], w, plain)
+			}
+		}
+		for _, l := range strings.Split(out, "\n") {
+			if ansi.StringWidth(l) > 60 {
+				t.Errorf("%q: line too wide (%d)", src[:12], ansi.StringWidth(l))
+			}
+		}
+	}
+}

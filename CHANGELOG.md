@@ -18,6 +18,8 @@ All notable changes to this project are documented here. The format follows
 - Local images are drawn in the preview with half-block characters.
 - Copy: drag to select (auto-copied with a toast), `yy`, visual `v`/`V` +
   `y`/`d`, `p` to paste. Uses the system clipboard, or OSC 52 over SSH.
+- Board, calendar, timeline, chart (pixel art: bar/hbar/line/pie/donut) and
+  form views, written as editable fenced blocks and drawn in the preview.
 - Page cover banners (`/cover`, front matter `cover:` / `icon:`) drawn as
   pixel art across the top of the preview.
 - `\` opens the finder (instead of `/`).
