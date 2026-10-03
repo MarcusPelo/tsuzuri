@@ -3,97 +3,143 @@ package app
 import (
 	"strings"
 
-	"tsuzuri/internal/theme"
+	"github.com/jaisuriya-11/tsuzuri/internal/theme"
+	"github.com/jaisuriya-11/tsuzuri/internal/ui"
 
 	"github.com/charmbracelet/lipgloss"
 )
 
-// RenderKeymapModal renders the floating shortcuts cheatsheet modal in the center of the terminal.
+type keymapSection struct {
+	title string
+	keys  [][2]string
+}
+
+var keymapSections = [][]keymapSection{
+	{
+		{"󰕭 GENERAL", [][2]string{
+			{"Ctrl+N", "New note (unsaved tab)"},
+			{"Ctrl+S", "Save (new notes: pick folder)"},
+			{"\\ / Ctrl+P", "Find note (opens in this tab)"},
+			{"Ctrl+B", "Toggle explorer"},
+			{"Tab", "Next pane"},
+			{"SPC Tab", "Next tab (SPC S-Tab: previous)"},
+			{"[ / ]", "Previous / next tab"},
+			{"SPC x", "Close tab"},
+			{"SPC p", "Toggle preview"},
+			{"SPC t", "Themes"},
+			{"SPC d", "Home screen"},
+			{"Ctrl+C", "Quit (asks to save)"},
+		}},
+		{"󰙅 EXPLORER", [][2]string{
+			{"j / k", "Move"},
+			{"Enter / l", "Open note / expand"},
+			{"h", "Collapse / go to parent"},
+			{"n", "New note in this folder"},
+			{"a", "New sub-note"},
+			{"r", "Rename"},
+			{"d", "Delete (asks first)"},
+			{"\\", "Find note"},
+		}},
+	},
+	{
+		{" EDITOR · NORMAL", [][2]string{
+			{"i a A I", "Insert mode"},
+			{"Tab/S-Tab", "Indent / outdent (insert)"},
+			{"o / O", "New line below / above"},
+			{"h j k l", "Move"},
+			{"w / b", "Next / previous word"},
+			{"0 / $", "Line start / end"},
+			{"gg / G", "Top / bottom"},
+			{"Ctrl+D/U", "Half page down / up"},
+			{"x / dd", "Delete char / line"},
+			{"yy / p", "Copy line / paste"},
+			{"v / V", "Select, then y copy, d cut"},
+			{"/ (insert)", "Block menu: headings, lists…"},
+		}},
+		{" COMMANDS", [][2]string{
+			{":w", "Save"},
+			{":w name", "Save as name.md"},
+			{":wq / :x", "Save and quit"},
+			{":q / :q!", "Quit / discard"},
+			{":bd", "Close tab"},
+			{":enew", "New note"},
+			{":colo name", "Switch theme"},
+			{":addrow/:addcol", "Table row / column"},
+		}},
+		{"󰍽 MOUSE", [][2]string{
+			{"Click", "Tabs, tree, cursor"},
+			{"Wheel", "Scroll any pane"},
+			{"< / > / T", "Calendar month (preview)"},
+			{"zM / zR", "Fold / unfold all (preview)"},
+		}},
+	},
+}
+
+// RenderKeymapModal renders the cheatsheet panel (without positioning).
 func RenderKeymapModal(th theme.Theme, termWidth, termHeight int) string {
-	modalWidth := 74
-	if modalWidth > termWidth-4 {
-		modalWidth = termWidth - 4
+	colW := 40
+	twoCols := termWidth >= colW*2+8
+	bg := lipgloss.NewStyle().Background(th.DarkerBg)
+	keyStyle := bg.Foreground(th.Blue).Bold(true)
+	descStyle := bg.Foreground(th.Fg)
+	headStyle := bg.Foreground(th.Purple).Bold(true)
+
+	column := func(sections []keymapSection) []string {
+		var rows []string
+		for i, s := range sections {
+			if i > 0 {
+				rows = append(rows, "")
+			}
+			rows = append(rows, headStyle.Render(" "+s.title))
+			for _, k := range s.keys {
+				key := keyStyle.Render(" " + padRight(k[0], 11))
+				rows = append(rows, ui.FitLine(key+descStyle.Render(ui.Truncate(k[1], colW-13)), colW, bg))
+			}
+		}
+		return rows
 	}
 
-	titleStyle := lipgloss.NewStyle().
-		Bold(true).
-		Foreground(th.DarkFg).
-		Background(th.NormalBg).
-		Padding(0, 2)
-
-	catHeaderStyle := lipgloss.NewStyle().
-		Bold(true).
-		Foreground(th.SidebarBg)
-
-	keyStyle := lipgloss.NewStyle().
-		Bold(true).
-		Foreground(th.SelectedFg)
-
-	descStyle := lipgloss.NewStyle().
-		Foreground(th.TitleFg)
-
-	var b strings.Builder
-
-	// Header
-	b.WriteString(lipgloss.NewStyle().Align(lipgloss.Center).Width(modalWidth-4).Render(titleStyle.Render("󰌌  TSUZURI SHORTCUTS CHEATSHEET")) + "\n\n")
-
-	// Section 1: Navigation & Layout
-	b.WriteString(catHeaderStyle.Render("󰕭 NAVIGATION & LAYOUT") + "\n")
-	b.WriteString(fmtShortcut("Tab", "Cycle Focus (Sidebar → Editor → Preview)", keyStyle, descStyle) + "\n")
-	b.WriteString(fmtShortcut("Ctrl+B", "Toggle Sidebar (Show / Hide)", keyStyle, descStyle) + "\n")
-	b.WriteString(fmtShortcut("Ctrl+D", "Return to NvChad Landing Page", keyStyle, descStyle) + "\n")
-	b.WriteString(fmtShortcut("SPC h", "Open this Shortcuts Modal", keyStyle, descStyle) + "\n")
-	b.WriteString(fmtShortcut("Ctrl+C", "Quit Application", keyStyle, descStyle) + "\n\n")
-
-	// Section 2: Notion Sidebar & Nested Tree
-	b.WriteString(catHeaderStyle.Render("󰉋 NOTION SIDEBAR & TREE") + "\n")
-	b.WriteString(fmtShortcut("j / k", "Navigate items up / down", keyStyle, descStyle) + "\n")
-	b.WriteString(fmtShortcut("Enter / r / e", "Inline edit / rename selected document", keyStyle, descStyle) + "\n")
-	b.WriteString(fmtShortcut("z / Space", "Expand / Collapse folder", keyStyle, descStyle) + "\n")
-	b.WriteString(fmtShortcut("n", "New top-level document", keyStyle, descStyle) + "\n")
-	b.WriteString(fmtShortcut("a", "New nested sub-page under current doc", keyStyle, descStyle) + "\n")
-	b.WriteString(fmtShortcut("d / x", "Delete document", keyStyle, descStyle) + "\n")
-	b.WriteString(fmtShortcut("/", "Search & filter documents in tree", keyStyle, descStyle) + "\n\n")
-
-	// Section 3: Markdown Editor
-	b.WriteString(catHeaderStyle.Render(" MARKDOWN EDITOR (VIM)") + "\n")
-	b.WriteString(fmtShortcut("i / a", "Enter INSERT mode (compiles live on typing)", keyStyle, descStyle) + "\n")
-	b.WriteString(fmtShortcut("Esc", "Return to NORMAL mode", keyStyle, descStyle) + "\n")
-	b.WriteString(fmtShortcut(":w", "Save document", keyStyle, descStyle) + "\n")
-	b.WriteString(fmtShortcut(":wq", "Save and quit application", keyStyle, descStyle) + "\n\n")
-
-	// Section 4: Live Compiled Preview
-	b.WriteString(catHeaderStyle.Render("󰈈 LIVE COMPILED PREVIEW") + "\n")
-	b.WriteString(fmtShortcut("j / k", "Scroll preview line up / down", keyStyle, descStyle) + "\n")
-	b.WriteString(fmtShortcut("d / u", "Half-page scroll down / up", keyStyle, descStyle) + "\n")
-	b.WriteString(fmtShortcut("g / G", "Jump to top / bottom", keyStyle, descStyle) + "\n\n")
-
-	// Footer dismissal hint
-	dismissStyle := lipgloss.NewStyle().
-		Italic(true).
-		Foreground(th.MutedFg).
-		Align(lipgloss.Center).
-		Width(modalWidth - 4)
-	b.WriteString(dismissStyle.Render("Esc / q / Space to dismiss"))
-
-	box := lipgloss.NewStyle().
-		Width(modalWidth).
-		BorderStyle(lipgloss.DoubleBorder()).
-		BorderForeground(th.SelectedFg).
-		Background(th.SelectedBg).
-		Padding(1, 2).
-		Render(b.String())
-
-	return lipgloss.Place(termWidth, termHeight, lipgloss.Center, lipgloss.Center, box)
-}
-
-func fmtShortcut(key, desc string, kStyle, dStyle lipgloss.Style) string {
-	return "  " + kStyle.Render(fmtPadRight(key, 12)) + " " + dStyle.Render(desc)
-}
-
-func fmtPadRight(s string, width int) string {
-	if len(s) >= width {
-		return s
+	left := column(keymapSections[0])
+	right := column(keymapSections[1])
+	var body []string
+	if twoCols {
+		n := max(len(left), len(right))
+		for i := 0; i < n; i++ {
+			l, r := "", ""
+			if i < len(left) {
+				l = left[i]
+			}
+			if i < len(right) {
+				r = right[i]
+			}
+			body = append(body, ui.FitLine(l, colW, bg)+bg.Render("  ")+ui.FitLine(r, colW, bg))
+		}
+	} else {
+		body = append(left, append([]string{""}, right...)...)
 	}
-	return s + strings.Repeat(" ", width-len(s))
+
+	width := colW
+	if twoCols {
+		width = colW*2 + 2
+	}
+	center := func(s string) string {
+		pad := max((width-lipgloss.Width(s))/2, 0)
+		return bg.Render(strings.Repeat(" ", pad)) + s
+	}
+	title := bg.Foreground(th.Blue).Render(" ") + bg.Foreground(th.Fg).Bold(true).Render("TSUZURI KEYMAPS")
+	rows := []string{center(title), ""}
+	rows = append(rows, body...)
+	rows = append(rows, "", center(bg.Foreground(th.GreyFg).Render("Esc / q / ? to close")))
+
+	if maxRows := termHeight - 2; len(rows) > maxRows && maxRows > 3 {
+		rows = append(rows[:maxRows-1], bg.Foreground(th.GreyFg).Render(" … enlarge the terminal to see all"))
+	}
+	return panel(th, rows, width)
+}
+
+func padRight(s string, width int) string {
+	if w := lipgloss.Width(s); w < width {
+		return s + strings.Repeat(" ", width-w)
+	}
+	return s
 }

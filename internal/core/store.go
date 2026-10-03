@@ -1,250 +1,670 @@
 package core
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
+	"path"
+	"path/filepath"
+	"sort"
+	"strings"
 	"sync"
 	"time"
 )
 
+// mdExt is the file extension used for page content files.
+const mdExt = ".md"
+
 var (
-	// ErrPageNotFound indicates the requested page ID does not exist in the store.
+	// ErrPageNotFound indicates the requested page ID does not exist on disk.
 	ErrPageNotFound = errors.New("page not found")
-	// ErrNoPages indicates the store contains no pages.
-	ErrNoPages = errors.New("no pages available in store")
 )
 
-// Store manages in-memory and workspace persistence for Pages.
+// Store is a thin, filesystem-backed workspace: every Page is a real ".md"
+// file on disk (plus an optional same-name sidecar folder holding its
+// sub-pages), and every plain directory it finds is surfaced as a navigable
+// folder node. There is no separate persistence format — the directory tree
+// IS the source of truth, so IDs (slash-separated paths relative to the
+// workspace root) are recomputed fresh from disk on every List/Get call.
 type Store struct {
-	mu    sync.RWMutex
-	pages map[string]Page
-	order []string
+	mu   sync.RWMutex
+	root string
 }
 
-// NewStore creates a Store populated with default workspace pages.
-func NewStore() *Store {
-	s := &Store{
-		pages: make(map[string]Page),
-		order: make([]string, 0),
+// NewStore opens (creating if necessary) a filesystem-backed workspace rooted at dir.
+func NewStore(dir string) (*Store, error) {
+	abs, err := filepath.Abs(dir)
+	if err != nil {
+		return nil, fmt.Errorf("invalid workspace path: %w", err)
 	}
 
-	initialPage := Page{
-		ID:        "page-1",
-		Title:     "Solutions Architect",
-		Content:   "# Solutions Architect\n\nWelcome to your Notion-style workspace in Tsuzuri.\n\n- [ ] Design cloud microservices\n- [x] Review architecture proposal\n\n> 💡 Connect your calendar and start meeting notes.",
-		Icon:      "",
-		UpdatedAt: time.Now(),
+	info, statErr := os.Stat(abs)
+	switch {
+	case os.IsNotExist(statErr):
+		if mkErr := os.MkdirAll(abs, 0755); mkErr != nil {
+			return nil, fmt.Errorf("failed to create workspace directory: %w", mkErr)
+		}
+	case statErr != nil:
+		return nil, fmt.Errorf("failed to access workspace directory: %w", statErr)
+	case !info.IsDir():
+		return nil, fmt.Errorf("workspace path %q is not a directory", abs)
 	}
 
-	s.pages[initialPage.ID] = initialPage
-	s.order = append(s.order, initialPage.ID)
-
-	return s
+	return &Store{root: abs}, nil
 }
 
-// List returns all pages in workspace ordering.
+// Root returns the absolute workspace directory backing this store.
+func (s *Store) Root() string {
+	return s.root
+}
+
+func (s *Store) idToAbs(id string) string {
+	return filepath.Join(s.root, filepath.FromSlash(id))
+}
+
+// parentIDFor derives the ID of id's parent page/folder purely from its path.
+func parentIDFor(root, id string) string {
+	dir := path.Dir(id)
+	if dir == "." || dir == "/" {
+		return ""
+	}
+	mdCandidate := dir + mdExt
+	if fileExists(filepath.Join(root, filepath.FromSlash(mdCandidate))) {
+		return mdCandidate
+	}
+	return dir
+}
+
+func fileExists(abs string) bool {
+	_, err := os.Stat(abs)
+	return err == nil
+}
+
+// List walks the workspace directory tree and returns a flattened list of
+// pages and folders, each carrying its real ParentID so callers can rebuild
+// the hierarchy. Folders are ordered before files, both alphabetically.
+// Folders with no Markdown file anywhere inside them are left out.
 func (s *Store) List() []Page {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	result := make([]Page, 0, len(s.order))
-	for _, id := range s.order {
-		if p, ok := s.pages[id]; ok {
-			result = append(result, p)
-		}
-	}
-	return result
+	var pages []Page
+	s.walk("", "", &pages)
+	return pages
 }
 
-// Get fetches a page by ID, returning ErrPageNotFound if not found.
+// walk appends relDir's notes and folders to out and reports whether it
+// found any Markdown file in the subtree.
+func (s *Store) walk(relDir, parentID string, out *[]Page) bool {
+	absDir := filepath.Join(s.root, filepath.FromSlash(relDir))
+	entries, err := os.ReadDir(absDir)
+	if err != nil {
+		return false
+	}
+	found := false
+
+	mdBases := map[string]bool{}
+	dirBases := map[string]bool{}
+	for _, e := range entries {
+		name := e.Name()
+		if strings.HasPrefix(name, ".") {
+			continue
+		}
+		if e.IsDir() {
+			dirBases[name] = true
+		} else if strings.HasSuffix(name, mdExt) {
+			mdBases[strings.TrimSuffix(name, mdExt)] = true
+		}
+	}
+
+	var expandable, leaves []string
+	seen := map[string]bool{}
+	for base := range mdBases {
+		seen[base] = true
+		if dirBases[base] {
+			expandable = append(expandable, base)
+		} else {
+			leaves = append(leaves, base)
+		}
+	}
+	for base := range dirBases {
+		if !seen[base] {
+			expandable = append(expandable, base)
+		}
+	}
+
+	caseInsensitive := func(list []string) func(i, j int) bool {
+		return func(i, j int) bool { return strings.ToLower(list[i]) < strings.ToLower(list[j]) }
+	}
+	sort.Slice(expandable, caseInsensitive(expandable))
+	sort.Slice(leaves, caseInsensitive(leaves))
+
+	for _, base := range expandable {
+		relChild := path.Join(relDir, base)
+		if mdBases[base] {
+			relFile := relChild + mdExt
+			id := relFile
+			*out = append(*out, Page{
+				ID:        id,
+				Title:     base,
+				ParentID:  parentID,
+				UpdatedAt: modTime(filepath.Join(s.root, filepath.FromSlash(relFile))),
+			})
+			s.walk(relChild, id, out)
+			found = true
+		} else {
+			id := relChild
+			folder := Page{
+				ID:        id,
+				Title:     base,
+				ParentID:  parentID,
+				IsFolder:  true,
+				UpdatedAt: modTime(filepath.Join(s.root, filepath.FromSlash(relChild))),
+			}
+			var children []Page
+			if s.walk(relChild, id, &children) {
+				*out = append(*out, folder)
+				*out = append(*out, children...)
+				found = true
+			}
+		}
+	}
+
+	for _, base := range leaves {
+		relFile := path.Join(relDir, base) + mdExt
+		*out = append(*out, Page{
+			ID:        relFile,
+			Title:     base,
+			ParentID:  parentID,
+			UpdatedAt: modTime(filepath.Join(s.root, filepath.FromSlash(relFile))),
+		})
+		found = true
+	}
+	return found
+}
+
+func modTime(abs string) time.Time {
+	info, err := os.Stat(abs)
+	if err != nil {
+		return time.Time{}
+	}
+	return info.ModTime()
+}
+
+// Get fetches a single page (or folder) by ID, reading its content from disk.
 func (s *Store) Get(id string) (Page, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	p, ok := s.pages[id]
-	if !ok {
-		return Page{}, ErrPageNotFound
-	}
-	return p, nil
-}
-
-// Create generates and stores a new Page.
-func (s *Store) Create(title string) (Page, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	nextNum := len(s.pages) + 1
-	if title == "" {
-		title = fmt.Sprintf("Untitled %d", nextNum)
-	}
-
-	p := Page{
-		ID:        fmt.Sprintf("page-%d", nextNum),
-		Title:     title,
-		Content:   "",
-		UpdatedAt: time.Now(),
-	}
-
-	s.pages[p.ID] = p
-	s.order = append(s.order, p.ID)
-	return p, nil
-}
-
-// CreateChild generates and stores a new Page nested under parentID.
-func (s *Store) CreateChild(parentID, title string) (Page, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if _, ok := s.pages[parentID]; !ok {
+	if id == "" {
 		return Page{}, ErrPageNotFound
 	}
 
-	nextNum := len(s.pages) + 1
-	if title == "" {
-		title = fmt.Sprintf("Untitled %d", nextNum)
+	abs := s.idToAbs(id)
+	info, err := os.Stat(abs)
+	if err != nil {
+		return Page{}, ErrPageNotFound
 	}
 
-	p := Page{
-		ID:        fmt.Sprintf("page-%d", nextNum),
-		Title:     title,
-		Content:   "",
-		ParentID:  parentID,
-		UpdatedAt: time.Now(),
+	parentID := parentIDFor(s.root, id)
+	title := strings.TrimSuffix(path.Base(id), mdExt)
+
+	if info.IsDir() {
+		return Page{ID: id, Title: title, ParentID: parentID, IsFolder: true, UpdatedAt: info.ModTime()}, nil
 	}
 
-	s.pages[p.ID] = p
-	s.order = append(s.order, p.ID)
-	return p, nil
+	if !strings.HasSuffix(id, mdExt) {
+		return Page{}, ErrPageNotFound
+	}
+
+	data, err := os.ReadFile(abs)
+	if err != nil {
+		return Page{}, ErrPageNotFound
+	}
+
+	content := strings.ReplaceAll(string(data), "\r\n", "\n")
+	return Page{ID: id, Title: title, Content: content, ParentID: parentID, UpdatedAt: info.ModTime()}, nil
 }
 
-// Update updates an existing page's title or content.
-func (s *Store) Update(p Page) error {
+// childDirFor resolves the relative directory new children of parentID should
+// be written into: the workspace root, an existing plain folder, or the
+// sidecar folder belonging to a page.
+func (s *Store) childDirFor(parentID string) (string, error) {
+	if parentID == "" {
+		return "", nil
+	}
+
+	abs := s.idToAbs(parentID)
+	info, err := os.Stat(abs)
+	if err != nil {
+		return "", ErrPageNotFound
+	}
+	if info.IsDir() {
+		return parentID, nil
+	}
+	if !strings.HasSuffix(parentID, mdExt) {
+		return "", ErrPageNotFound
+	}
+	return strings.TrimSuffix(parentID, mdExt), nil
+}
+
+// sanitizeTitle strips path separators and surrounding whitespace so a title
+// can never escape its intended directory.
+func sanitizeTitle(title string) string {
+	cleaned := strings.Map(func(r rune) rune {
+		switch {
+		case r < 0x20:
+			return -1
+		case strings.ContainsRune(invalidNameChars, r):
+			return '-'
+		}
+		return r
+	}, title)
+	cleaned = strings.TrimRight(strings.TrimSpace(cleaned), ". ")
+	if cleaned == "" {
+		cleaned = "Untitled"
+	}
+	if reservedName(cleaned) {
+		cleaned += "-note"
+	}
+	return cleaned
+}
+
+// invalidNameChars can't appear in file names on Windows (and / nowhere);
+// rejecting them everywhere keeps notes portable between machines.
+const invalidNameChars = `/\:*?"<>|`
+
+// reservedName reports Windows device names (CON, NUL, COM1, …), which can't
+// be used as file names even with an extension.
+func reservedName(name string) bool {
+	base := strings.ToUpper(strings.TrimSuffix(name, mdExt))
+	switch base {
+	case "CON", "PRN", "AUX", "NUL":
+		return true
+	}
+	if len(base) == 4 && (strings.HasPrefix(base, "COM") || strings.HasPrefix(base, "LPT")) && base[3] >= '1' && base[3] <= '9' {
+		return true
+	}
+	return false
+}
+
+// writeText writes a note, keeping Windows (CRLF) line endings if the file
+// already used them; notes are always edited with plain \n.
+func writeText(abs, content string) error {
+	if old, err := os.ReadFile(abs); err == nil && strings.Contains(string(old), "\r\n") {
+		content = strings.ReplaceAll(content, "\n", "\r\n")
+	}
+	return os.WriteFile(abs, []byte(content), 0644)
+}
+
+func nextUntitled(absDir string) string {
+	entries, _ := os.ReadDir(absDir)
+	existing := map[string]bool{}
+	for _, e := range entries {
+		name := e.Name()
+		if !e.IsDir() {
+			name = strings.TrimSuffix(name, mdExt)
+		}
+		existing[name] = true
+	}
+	if !existing["Untitled"] {
+		return "Untitled"
+	}
+	for i := 2; ; i++ {
+		cand := fmt.Sprintf("Untitled %d", i)
+		if !existing[cand] {
+			return cand
+		}
+	}
+}
+
+// Create writes a new page file to disk under parentID ("" for the workspace
+// root) and returns the resulting Page. An empty title generates "Untitled"
+// (or "Untitled N" if that's taken); a colliding title is disambiguated the
+// same way.
+func (s *Store) Create(title, parentID string) (Page, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if _, ok := s.pages[p.ID]; !ok {
-		return ErrPageNotFound
+	relDir, err := s.childDirFor(parentID)
+	if err != nil {
+		return Page{}, err
 	}
-	p.UpdatedAt = time.Now()
-	s.pages[p.ID] = p
-	return nil
+
+	absDir := filepath.Join(s.root, filepath.FromSlash(relDir))
+	if err := os.MkdirAll(absDir, 0755); err != nil {
+		return Page{}, fmt.Errorf("failed to create folder: %w", err)
+	}
+
+	title = strings.TrimSpace(title)
+	if title == "" {
+		title = nextUntitled(absDir)
+	} else {
+		title = sanitizeTitle(title)
+	}
+
+	finalTitle := title
+	absFile := filepath.Join(absDir, finalTitle+mdExt)
+	for n := 2; fileExists(absFile); n++ {
+		finalTitle = fmt.Sprintf("%s %d", title, n)
+		absFile = filepath.Join(absDir, finalTitle+mdExt)
+	}
+
+	if err := os.WriteFile(absFile, []byte(""), 0644); err != nil {
+		return Page{}, fmt.Errorf("failed to create page: %w", err)
+	}
+
+	id := path.Join(relDir, finalTitle+mdExt)
+	return Page{ID: id, Title: finalTitle, ParentID: parentID, UpdatedAt: modTime(absFile)}, nil
 }
 
-// Delete removes a page by ID.
+// Update persists p.Content to disk and, if p.Title no longer matches the
+// page's current filename, renames the file (and its sidecar sub-pages
+// folder, if any) to match. It returns the page as it now exists on disk,
+// since a rename changes its ID.
+func (s *Store) Update(p Page) (Page, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	abs := s.idToAbs(p.ID)
+	info, err := os.Stat(abs)
+	if err != nil {
+		return Page{}, ErrPageNotFound
+	}
+
+	if info.IsDir() {
+		return s.renameFolder(p, abs)
+	}
+
+	currentTitle := strings.TrimSuffix(path.Base(p.ID), mdExt)
+	newTitle := strings.TrimSpace(p.Title)
+	if newTitle == "" {
+		newTitle = currentTitle
+	} else {
+		newTitle = sanitizeTitle(newTitle)
+	}
+
+	id := p.ID
+	if newTitle != currentTitle {
+		dir := path.Dir(p.ID)
+		if dir == "." {
+			dir = ""
+		}
+		absDir := filepath.Join(s.root, filepath.FromSlash(dir))
+		newAbs := filepath.Join(absDir, newTitle+mdExt)
+
+		if fileExists(newAbs) {
+			return Page{}, fmt.Errorf("a page named %q already exists here", newTitle)
+		}
+		if err := os.Rename(abs, newAbs); err != nil {
+			return Page{}, fmt.Errorf("failed to rename page: %w", err)
+		}
+
+		oldSidecar := strings.TrimSuffix(abs, mdExt)
+		if info, err := os.Stat(oldSidecar); err == nil && info.IsDir() {
+			newSidecar := strings.TrimSuffix(newAbs, mdExt)
+			if err := os.Rename(oldSidecar, newSidecar); err != nil {
+				return Page{}, fmt.Errorf("failed to rename sub-pages: %w", err)
+			}
+		}
+
+		id = path.Join(dir, newTitle+mdExt)
+		abs = newAbs
+	}
+
+	if err := writeText(abs, p.Content); err != nil {
+		return Page{}, fmt.Errorf("failed to save page: %w", err)
+	}
+
+	parentID := parentIDFor(s.root, id)
+	return Page{ID: id, Title: newTitle, Content: p.Content, ParentID: parentID, UpdatedAt: modTime(abs)}, nil
+}
+
+// renameFolder handles Update for a plain folder node (no backing .md file,
+// so there's no content to persist — only a possible rename). Caller must
+// already hold s.mu.
+func (s *Store) renameFolder(p Page, abs string) (Page, error) {
+	currentTitle := path.Base(p.ID)
+	newTitle := strings.TrimSpace(p.Title)
+	if newTitle == "" {
+		newTitle = currentTitle
+	} else {
+		newTitle = sanitizeTitle(newTitle)
+	}
+
+	id := p.ID
+	if newTitle != currentTitle {
+		dir := path.Dir(p.ID)
+		if dir == "." {
+			dir = ""
+		}
+		absDir := filepath.Join(s.root, filepath.FromSlash(dir))
+		newAbs := filepath.Join(absDir, newTitle)
+
+		if fileExists(newAbs) {
+			return Page{}, fmt.Errorf("a folder named %q already exists here", newTitle)
+		}
+		if err := os.Rename(abs, newAbs); err != nil {
+			return Page{}, fmt.Errorf("failed to rename folder: %w", err)
+		}
+
+		id = path.Join(dir, newTitle)
+		abs = newAbs
+	}
+
+	parentID := parentIDFor(s.root, id)
+	return Page{ID: id, Title: newTitle, ParentID: parentID, IsFolder: true, UpdatedAt: modTime(abs)}, nil
+}
+
+// Delete removes a page (or folder) by ID. Deleting a page cascades to its
+// sidecar sub-pages folder, if any; deleting a folder removes everything
+// nested inside it.
 func (s *Store) Delete(id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if _, ok := s.pages[id]; !ok {
+	abs := s.idToAbs(id)
+	info, err := os.Stat(abs)
+	if err != nil {
 		return ErrPageNotFound
 	}
-	delete(s.pages, id)
 
-	newOrder := make([]string, 0, len(s.order)-1)
-	for _, pageID := range s.order {
-		if pageID != id {
-			newOrder = append(newOrder, pageID)
+	if info.IsDir() {
+		if err := os.RemoveAll(abs); err != nil {
+			return fmt.Errorf("failed to delete folder: %w", err)
+		}
+		return nil
+	}
+
+	if err := os.Remove(abs); err != nil {
+		return fmt.Errorf("failed to delete page: %w", err)
+	}
+
+	sidecar := strings.TrimSuffix(abs, mdExt)
+	if sInfo, err := os.Stat(sidecar); err == nil && sInfo.IsDir() {
+		_ = os.RemoveAll(sidecar)
+	}
+	return nil
+}
+
+// Dirs returns every non-hidden directory in the workspace as a
+// slash-separated path relative to the root, sorted case-insensitively. The
+// root itself is represented by "".
+func (s *Store) Dirs() []string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	dirs := []string{""}
+	_ = filepath.WalkDir(s.root, func(p string, d os.DirEntry, err error) error {
+		if err != nil || !d.IsDir() || p == s.root {
+			return nil
+		}
+		if strings.HasPrefix(d.Name(), ".") {
+			return filepath.SkipDir
+		}
+		rel, relErr := filepath.Rel(s.root, p)
+		if relErr != nil {
+			return nil
+		}
+		dirs = append(dirs, filepath.ToSlash(rel))
+		return nil
+	})
+	sort.Slice(dirs, func(i, j int) bool { return strings.ToLower(dirs[i]) < strings.ToLower(dirs[j]) })
+	return dirs
+}
+
+// ChildDir returns the directory (relative to the root) where new children of
+// parentID live: the root, a plain folder, or a page's sidecar folder. Unknown
+// parents resolve to the root.
+func (s *Store) ChildDir(parentID string) string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	dir, err := s.childDirFor(parentID)
+	if err != nil {
+		return ""
+	}
+	return dir
+}
+
+// NormalizeNotePath cleans a user-supplied relative note path and forces the
+// ".md" extension (Tsuzuri only ever writes Markdown). It rejects absolute
+// paths, hidden segments and anything that would escape the workspace.
+func NormalizeNotePath(dir, name string) (string, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return "", errors.New("file name is empty")
+	}
+	if strings.ContainsAny(name, invalidNameChars+"\x00") {
+		return "", errors.New(`file name cannot contain / \ : * ? " < > |`)
+	}
+	if reservedName(name) {
+		return "", errors.New(name + " is a reserved name on Windows")
+	}
+	name = strings.TrimRight(name, ". ")
+	if !strings.HasSuffix(strings.ToLower(name), mdExt) {
+		name += mdExt
+	} else {
+		name = name[:len(name)-len(mdExt)] + mdExt
+	}
+	if strings.TrimSuffix(name, mdExt) == "" {
+		return "", errors.New("file name is empty")
+	}
+
+	dir = strings.Trim(strings.TrimSpace(filepath.ToSlash(dir)), "/")
+	rel := path.Clean(path.Join(dir, name))
+	if path.IsAbs(rel) || rel == ".." || strings.HasPrefix(rel, "../") {
+		return "", errors.New("location must be inside the workspace")
+	}
+	for _, seg := range strings.Split(rel, "/") {
+		if strings.HasPrefix(seg, ".") {
+			return "", errors.New("hidden files and folders are not allowed")
 		}
 	}
-	s.order = newOrder
-	return nil
+	return rel, nil
 }
 
-// WorkspaceData defines the serializable JSON schema for store save/load persistence.
-type WorkspaceData struct {
-	Pages []Page `json:"pages"`
-}
-
-// SaveToFile serializes the store contents to a JSON file.
-func (s *Store) SaveToFile(filePath string) error {
-	s.mu.RLock()
-	data := WorkspaceData{Pages: s.List()}
-	s.mu.RUnlock()
-
-	bytes, err := json.MarshalIndent(data, "", "  ")
+// SaveAs writes content to a new note at dir/name (".md" is added if
+// missing), creating any missing folders. It refuses to overwrite an
+// existing file.
+func (s *Store) SaveAs(dir, name, content string) (Page, error) {
+	rel, err := NormalizeNotePath(dir, name)
 	if err != nil {
-		return fmt.Errorf("failed to marshal workspace data: %w", err)
-	}
-
-	if err := os.WriteFile(filePath, bytes, 0644); err != nil {
-		return fmt.Errorf("failed to write workspace file: %w", err)
-	}
-	return nil
-}
-
-// LoadFromFile reads and populates the store from a JSON workspace file.
-func (s *Store) LoadFromFile(filePath string) error {
-	bytes, err := os.ReadFile(filePath)
-	if err != nil {
-		return fmt.Errorf("failed to read workspace file: %w", err)
-	}
-
-	var data WorkspaceData
-	if err := json.Unmarshal(bytes, &data); err != nil {
-		return fmt.Errorf("failed to unmarshal workspace file: %w", err)
+		return Page{}, err
 	}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	s.pages = make(map[string]Page)
-	s.order = make([]string, 0, len(data.Pages))
-
-	for _, p := range data.Pages {
-		s.pages[p.ID] = p
-		s.order = append(s.order, p.ID)
+	abs := s.idToAbs(rel)
+	if fileExists(abs) {
+		return Page{}, fmt.Errorf("%s already exists", rel)
 	}
-
-	return nil
+	if err := os.MkdirAll(filepath.Dir(abs), 0755); err != nil {
+		return Page{}, fmt.Errorf("failed to create folder: %w", err)
+	}
+	if err := os.WriteFile(abs, []byte(content), 0644); err != nil {
+		return Page{}, fmt.Errorf("failed to save page: %w", err)
+	}
+	return Page{
+		ID:        rel,
+		Title:     strings.TrimSuffix(path.Base(rel), mdExt),
+		Content:   content,
+		ParentID:  parentIDFor(s.root, rel),
+		UpdatedAt: modTime(abs),
+	}, nil
 }
 
-// SeedHierarchy populates the store with the multi-level Notion structure if only the initial page is present.
-func (s *Store) SeedHierarchy() {
+// Rename changes a page's or folder's name on disk without touching its
+// content (Update would overwrite the file with p.Content).
+func (s *Store) Rename(id, newTitle string) (Page, error) {
+	p, err := s.Get(id)
+	if err != nil {
+		return Page{}, err
+	}
+	p.Title = strings.TrimSuffix(strings.TrimSpace(newTitle), mdExt)
+	return s.Update(p)
+}
+
+// AttachFile makes src available to a note living in noteDir (relative to
+// the root) and returns the link target to write in the note, relative to
+// noteDir. Files already inside the workspace are linked in place; anything
+// else is copied into noteDir/assets/ (renamed if the name is taken).
+func (s *Store) AttachFile(noteDir, src string) (string, error) {
+	absSrc, err := filepath.Abs(src)
+	if err != nil {
+		return "", err
+	}
+	info, err := os.Stat(absSrc)
+	if err != nil {
+		return "", err
+	}
+	if info.IsDir() {
+		return "", fmt.Errorf("%s is a folder", filepath.Base(absSrc))
+	}
+	noteAbs := s.idToAbs(noteDir)
+
+	if rel, err := filepath.Rel(s.root, absSrc); err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		link, err := filepath.Rel(noteAbs, absSrc)
+		if err != nil {
+			return "", err
+		}
+		return filepath.ToSlash(link), nil
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if len(s.pages) > 1 {
-		return
+	assets := filepath.Join(noteAbs, "assets")
+	if err := os.MkdirAll(assets, 0o755); err != nil {
+		return "", fmt.Errorf("failed to create assets folder: %w", err)
 	}
+	ext := filepath.Ext(absSrc)
+	stem := strings.TrimSuffix(filepath.Base(absSrc), ext)
+	dst := filepath.Join(assets, stem+ext)
+	for n := 2; fileExists(dst); n++ {
+		dst = filepath.Join(assets, fmt.Sprintf("%s-%d%s", stem, n, ext))
+	}
+	if err := copyFile(absSrc, dst); err != nil {
+		return "", err
+	}
+	return "assets/" + filepath.Base(dst), nil
+}
 
-	p1 := Page{
-		ID:        "page-parent-1",
-		Title:     "Parent 1",
-		Content:   "# Parent 1\n\nTop-level workspace document.",
-		UpdatedAt: time.Now(),
+func copyFile(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
 	}
-	c1 := Page{
-		ID:        "page-child-1",
-		Title:     "child 1",
-		ParentID:  "page-parent-1",
-		Content:   "## child 1\n\nNested sub-document.",
-		UpdatedAt: time.Now(),
+	defer in.Close()
+	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+	if err != nil {
+		return err
 	}
-	gc1 := Page{
-		ID:        "page-child-1-child",
-		Title:     "child 1's child",
-		ParentID:  "page-child-1",
-		Content:   "### child 1's child\n\nGrandchild note at depth 3.",
-		UpdatedAt: time.Now(),
+	if _, err := io.Copy(out, in); err != nil {
+		out.Close()
+		os.Remove(dst)
+		return fmt.Errorf("failed to copy %s: %w", filepath.Base(src), err)
 	}
-	p2 := Page{
-		ID:        "page-parent-2",
-		Title:     "Parent 2",
-		Content:   "# Parent 2\n\nSecond root document.",
-		UpdatedAt: time.Now(),
-	}
-	c2 := Page{
-		ID:        "page-child-2",
-		Title:     "child 2",
-		ParentID:  "page-parent-2",
-		Content:   "## child 2\n\nNested document under Parent 2.",
-		UpdatedAt: time.Now(),
-	}
-
-	for _, p := range []Page{p1, c1, gc1, p2, c2} {
-		s.pages[p.ID] = p
-		s.order = append(s.order, p.ID)
-	}
+	return out.Close()
 }

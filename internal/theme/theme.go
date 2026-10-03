@@ -2,10 +2,49 @@
 // and lipgloss style constructors.
 package theme
 
-import "github.com/charmbracelet/lipgloss"
+import (
+	"sort"
 
-// Theme encapsulates design system colors and styles.
+	"github.com/charmbracelet/lipgloss"
+)
+
+// Theme encapsulates design system colors. The palette mirrors NvChad's
+// base46 themes (onedark by default) so the UI reads like an NvChad session.
 type Theme struct {
+	Name  string
+	Light bool
+
+	// Base surfaces (darkest to lightest).
+	DarkerBg  lipgloss.Color // tree / tabufline fill
+	Bg        lipgloss.Color // editor background
+	Bg2       lipgloss.Color // inactive tab, input fields
+	OneBg     lipgloss.Color // cursorline, selection
+	OneBg2    lipgloss.Color
+	OneBg3    lipgloss.Color
+	LightBg   lipgloss.Color // statusline file block
+	StatusBg  lipgloss.Color // statusline fill
+	Line      lipgloss.Color // separators, indent guides
+	Grey      lipgloss.Color
+	GreyFg    lipgloss.Color
+	GreyFg2   lipgloss.Color
+	LightGrey lipgloss.Color
+	Fg        lipgloss.Color
+
+	// Accents.
+	Red        lipgloss.Color
+	Pink       lipgloss.Color
+	Green      lipgloss.Color
+	Blue       lipgloss.Color
+	NordBlue   lipgloss.Color
+	Yellow     lipgloss.Color
+	Purple     lipgloss.Color
+	DarkPurple lipgloss.Color
+	Teal       lipgloss.Color
+	Orange     lipgloss.Color
+	Cyan       lipgloss.Color
+	Folder     lipgloss.Color
+
+	// Semantic aliases kept for the Markdown compiler and older components.
 	NormalBg    lipgloss.Color
 	InsertBg    lipgloss.Color
 	CommandBg   lipgloss.Color
@@ -19,19 +58,83 @@ type Theme struct {
 	BorderFocus lipgloss.Color
 }
 
-// DefaultTheme returns the default Gruvbox Dark theme palette.
-func DefaultTheme() Theme {
-	return Theme{
-		NormalBg:    lipgloss.Color("#fabd2f"),
-		InsertBg:    lipgloss.Color("#b8bb26"),
-		CommandBg:   lipgloss.Color("#8ec07c"),
-		SidebarBg:   lipgloss.Color("#d3869b"),
-		DarkFg:      lipgloss.Color("#282828"),
-		MutedFg:     lipgloss.Color("#928374"),
-		TitleFg:     lipgloss.Color("#ebdbb2"),
-		SelectedFg:  lipgloss.Color("#fabd2f"),
-		SelectedBg:  lipgloss.Color("#3c3836"),
-		Border:      lipgloss.Color("#504945"),
-		BorderFocus: lipgloss.Color("#fabd2f"),
+// DefaultName is the theme used when none is configured.
+const DefaultName = "onedark"
+
+// palette is one NvChad base46 "base_30" colour table.
+type palette struct {
+	Light bool
+	Fg, DarkerBg, Bg, Bg2, OneBg, OneBg2, OneBg3, Grey, GreyFg, GreyFg2,
+	LightGrey, Red, Pink, Line, Green, NordBlue, Blue, Yellow, Purple,
+	DarkPurple, Teal, Orange, Cyan, StatusBg, LightBg, Folder string
+}
+
+// Names lists every bundled theme, sorted.
+func Names() []string {
+	names := make([]string, 0, len(palettes))
+	for n := range palettes {
+		names = append(names, n)
 	}
+	sort.Strings(names)
+	return names
+}
+
+// DefaultTheme returns the NvChad onedark theme.
+func DefaultTheme() Theme {
+	t, _ := Get(DefaultName)
+	return t
+}
+
+// Get returns the named theme; ok is false for unknown names.
+func Get(name string) (Theme, bool) {
+	p, ok := palettes[name]
+	if !ok {
+		return Theme{}, false
+	}
+	c := func(hex string) lipgloss.Color { return lipgloss.Color(hex) }
+	t := Theme{
+		Name:  name,
+		Light: p.Light,
+
+		DarkerBg:  c(p.DarkerBg),
+		Bg:        c(p.Bg),
+		Bg2:       c(p.Bg2),
+		OneBg:     c(p.OneBg),
+		OneBg2:    c(p.OneBg2),
+		OneBg3:    c(p.OneBg3),
+		LightBg:   c(p.LightBg),
+		StatusBg:  c(p.StatusBg),
+		Line:      c(p.Line),
+		Grey:      c(p.Grey),
+		GreyFg:    c(p.GreyFg),
+		GreyFg2:   c(p.GreyFg2),
+		LightGrey: c(p.LightGrey),
+		Fg:        c(p.Fg),
+
+		Red:        c(p.Red),
+		Pink:       c(p.Pink),
+		Green:      c(p.Green),
+		Blue:       c(p.Blue),
+		NordBlue:   c(p.NordBlue),
+		Yellow:     c(p.Yellow),
+		Purple:     c(p.Purple),
+		DarkPurple: c(p.DarkPurple),
+		Teal:       c(p.Teal),
+		Orange:     c(p.Orange),
+		Cyan:       c(p.Cyan),
+		Folder:     c(p.Folder),
+	}
+
+	t.NormalBg = t.Blue
+	t.InsertBg = t.DarkPurple
+	t.CommandBg = t.Green
+	t.SidebarBg = t.Purple
+	t.DarkFg = t.Bg
+	t.MutedFg = t.GreyFg2
+	t.TitleFg = t.Fg
+	t.SelectedFg = t.Blue
+	t.SelectedBg = t.OneBg
+	t.Border = t.Line
+	t.BorderFocus = t.Blue
+	return t, true
 }

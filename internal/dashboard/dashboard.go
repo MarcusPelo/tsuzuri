@@ -1,35 +1,48 @@
+// Package dashboard renders the NvChad "nvdash" style start screen.
 package dashboard
 
 import (
 	"fmt"
+	"path"
+	"sort"
 	"strings"
 
-	"tsuzuri/internal/core"
-	"tsuzuri/internal/theme"
+	"github.com/jaisuriya-11/tsuzuri/internal/core"
+	"github.com/jaisuriya-11/tsuzuri/internal/theme"
+	"github.com/jaisuriya-11/tsuzuri/internal/ui"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
 
-// Action defines an action triggered by a dashboard menu item.
+// Action defines an action triggered by a dashboard entry.
 type Action int
 
 const (
 	ActionNewPage Action = iota
+	ActionFind
 	ActionBrowse
+	ActionKeymap
 	ActionQuit
+	ActionOpenRecent
+	ActionThemes
+	ActionNone
 )
 
-// MenuItem represents a selectable button on the landing page.
+// MenuItem represents a selectable button on the start screen.
 type MenuItem struct {
-	Key         string
-	Icon        string
-	Label       string
-	Description string
-	Action      Action
+	Key    string
+	Icon   string
+	Label  string
+	Action Action
 }
 
-// Model represents the NvChad landing page state.
+const (
+	blockWidth = 56
+	maxRecent  = 5
+)
+
+// Model represents the start screen state.
 type Model struct {
 	theme       theme.Theme
 	width       int
@@ -37,6 +50,8 @@ type Model struct {
 	cursor      int
 	menuItems   []MenuItem
 	recentPages []core.Page
+	totalNotes  int
+	workspace   string
 }
 
 var banner = []string{
@@ -50,146 +65,193 @@ var banner = []string{
 
 // New constructs a Dashboard model.
 func New(th theme.Theme) Model {
-	items := []MenuItem{
-		{Key: "n", Icon: "󰏫", Label: "New Document", Description: "Create a new workspace note", Action: ActionNewPage},
-		{Key: "f", Icon: "󰉋", Label: "Browse Notes", Description: "Open sidebar page explorer", Action: ActionBrowse},
-		{Key: "q", Icon: "󰅖", Label: "Quit", Description: "Exit application", Action: ActionQuit},
-	}
 	return Model{
-		theme:     th,
-		menuItems: items,
-		cursor:    0,
+		theme: th,
+		menuItems: []MenuItem{
+			{Key: "n", Icon: "", Label: "New Note", Action: ActionNewPage},
+			{Key: "f", Icon: "󰍉", Label: "Find Note", Action: ActionFind},
+			{Key: "e", Icon: "󰙅", Label: "Open Explorer", Action: ActionBrowse},
+			{Key: "t", Icon: "\U000f03d8", Label: "Themes", Action: ActionThemes},
+			{Key: "?", Icon: "", Label: "Keymaps", Action: ActionKeymap},
+			{Key: "q", Icon: "󰩈", Label: "Quit", Action: ActionQuit},
+		},
 	}
 }
 
 // SetSize updates dimensions.
 func (m *Model) SetSize(w, h int) {
-	if w < 0 {
-		w = 0
-	}
-	if h < 0 {
-		h = 0
-	}
-	m.width = w
-	m.height = h
+	m.width = max(w, 0)
+	m.height = max(h, 0)
 }
 
-// SetRecentPages updates the list of recent pages shown on the dashboard.
+// SetTheme switches colours.
+func (m *Model) SetTheme(th theme.Theme) { m.theme = th }
+
+// SetWorkspace sets the path shown in the footer.
+func (m *Model) SetWorkspace(p string) { m.workspace = p }
+
+// SetRecentPages takes every note in the workspace and keeps the most
+// recently modified ones.
 func (m *Model) SetRecentPages(pages []core.Page) {
-	m.recentPages = pages
-}
-
-// SelectedAction returns the action of the currently hovered menu item.
-func (m Model) SelectedAction() Action {
-	if m.cursor >= 0 && m.cursor < len(m.menuItems) {
-		return m.menuItems[m.cursor].Action
+	recent := make([]core.Page, 0, len(pages))
+	for _, p := range pages {
+		if !p.IsFolder {
+			recent = append(recent, p)
+		}
 	}
-	return ActionNewPage
+	m.totalNotes = len(recent)
+	sort.SliceStable(recent, func(i, j int) bool { return recent[i].UpdatedAt.After(recent[j].UpdatedAt) })
+	if len(recent) > maxRecent {
+		recent = recent[:maxRecent]
+	}
+	m.recentPages = recent
+	m.cursor = min(m.cursor, m.itemCount()-1)
 }
 
-// Update handles dashboard navigation and shortcut keys.
+// RecentPages returns the notes listed under "Recent", newest first.
+func (m Model) RecentPages() []core.Page { return m.recentPages }
+
+func (m Model) itemCount() int { return len(m.menuItems) + len(m.recentPages) }
+
+// itemAt resolves a selectable index to its action and (for recents) page ID.
+func (m Model) itemAt(i int) (Action, string) {
+	if i < 0 || i >= m.itemCount() {
+		return ActionNone, ""
+	}
+	if i < len(m.menuItems) {
+		return m.menuItems[i].Action, ""
+	}
+	return ActionOpenRecent, m.recentPages[i-len(m.menuItems)].ID
+}
+
+// SelectedAction returns the action under the cursor (and the page ID for a
+// recent note).
+func (m Model) SelectedAction() (Action, string) { return m.itemAt(m.cursor) }
+
+// Update handles cursor movement.
 func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
-	switch msg := msg.(type) {
-	case tea.KeyMsg:
-		switch msg.String() {
-		case "up", "k":
-			if m.cursor > 0 {
-				m.cursor--
-			}
-		case "down", "j":
-			if m.cursor < len(m.menuItems)-1 {
-				m.cursor++
-			}
+	if k, ok := msg.(tea.KeyMsg); ok {
+		switch k.String() {
+		case "up", "k", "shift+tab":
+			m.cursor = (m.cursor - 1 + m.itemCount()) % m.itemCount()
+		case "down", "j", "tab":
+			m.cursor = (m.cursor + 1) % m.itemCount()
 		}
 	}
 	return m, nil
 }
 
-// View renders the centered NvChad dashboard.
+type dashLine struct {
+	text string
+	item int // selectable index, or -1
+}
+
+func (m Model) lines() []dashLine {
+	th := m.theme
+	plain := lipgloss.NewStyle()
+	center := func(s string) string {
+		w := lipgloss.Width(s)
+		left := max((blockWidth-w)/2, 0)
+		return ui.FitLine(strings.Repeat(" ", left)+s, blockWidth, plain)
+	}
+
+	var out []dashLine
+	add := func(s string, item int) { out = append(out, dashLine{text: s, item: item}) }
+
+	recentRows := len(m.recentPages)
+	if recentRows > 0 {
+		recentRows += 2
+	}
+	needed := len(banner) + 4 + len(m.menuItems) + recentRows + 2
+	if m.height >= needed+2 {
+		bannerStyle := lipgloss.NewStyle().Foreground(th.Blue).Bold(true)
+		for _, l := range banner {
+			add(center(bannerStyle.Render(l)), -1)
+		}
+	} else {
+		add(center(lipgloss.NewStyle().Foreground(th.Blue).Bold(true).Render("T S U Z U R I")), -1)
+	}
+	add("", -1)
+	add(center(lipgloss.NewStyle().Foreground(th.GreyFg2).Render("綴り · notes that live in plain Markdown files")), -1)
+	add("", -1)
+
+	button := func(idx int, icon, label, sub, key string, iconColor lipgloss.Color) string {
+		selected := idx == m.cursor
+		bg := plain
+		fg := th.Fg
+		if selected {
+			bg = lipgloss.NewStyle().Background(th.OneBg)
+			fg = th.Blue
+		}
+		left := bg.Foreground(iconColor).Render("  "+icon+"  ") + bg.Foreground(fg).Bold(selected).Render(label)
+		if sub != "" {
+			left += bg.Foreground(th.GreyFg).Render("  " + sub)
+		}
+		right := bg.Foreground(th.GreyFg2).Render(key + "  ")
+		gap := blockWidth - lipgloss.Width(left) - lipgloss.Width(right)
+		return left + bg.Render(strings.Repeat(" ", max(gap, 1))) + right
+	}
+
+	for i, it := range m.menuItems {
+		add(button(i, it.Icon, it.Label, "", it.Key, th.Blue), i)
+	}
+
+	if len(m.recentPages) > 0 {
+		add("", -1)
+		add(lipgloss.NewStyle().Foreground(th.GreyFg2).Render("  󰋚  Recent"), -1)
+		for i, p := range m.recentPages {
+			sub := ""
+			if dir := path.Dir(p.ID); dir != "." {
+				sub = ui.Truncate(dir, 18)
+			}
+			idx := len(m.menuItems) + i
+			add(button(idx, "", ui.Truncate(p.Title+".md", 26), sub, fmt.Sprint(i+1), th.NordBlue), idx)
+		}
+	}
+
+	add("", -1)
+	footer := lipgloss.NewStyle().Foreground(th.Green).Render("") +
+		lipgloss.NewStyle().Foreground(th.GreyFg2).Render(fmt.Sprintf("  %d notes  ·  %s", m.totalNotes, ui.Truncate(m.workspace, 34)))
+	add(center(footer), -1)
+	return out
+}
+
+func (m Model) origin(n int) (int, int) {
+	return ui.Center(m.width, m.height, blockWidth, n)
+}
+
+// Click resolves a left click at screen (x, y) to a dashboard entry,
+// moving the cursor there. ok is false when nothing selectable was hit.
+func (m *Model) Click(x, y int) (Action, string, bool) {
+	lines := m.lines()
+	left, top := m.origin(len(lines))
+	row := y - top
+	if row < 0 || row >= len(lines) || x < left || x >= left+blockWidth {
+		return ActionNone, "", false
+	}
+	idx := lines[row].item
+	if idx < 0 {
+		return ActionNone, "", false
+	}
+	m.cursor = idx
+	a, id := m.itemAt(idx)
+	return a, id, true
+}
+
+// View renders the centered start screen.
 func (m Model) View() string {
 	if m.width <= 0 || m.height <= 0 {
 		return ""
 	}
-
-	// 1. ASCII Art Banner
-	bannerStyle := lipgloss.NewStyle().
-		Bold(true).
-		Foreground(m.theme.SelectedFg)
-	var bannerLines []string
-	for _, l := range banner {
-		bannerLines = append(bannerLines, bannerStyle.Render(l))
+	lines := m.lines()
+	left, top := m.origin(len(lines))
+	pad := strings.Repeat(" ", left)
+	rows := make([]string, 0, m.height)
+	for i := 0; i < top; i++ {
+		rows = append(rows, "")
 	}
-	bannerBlock := strings.Join(bannerLines, "\n")
-
-	// 2. Subtitle
-	subtitle := lipgloss.NewStyle().
-		Foreground(m.theme.MutedFg).
-		Italic(true).
-		Render("~ 綴り • Terminal Markdown Notebook ~")
-
-	// 3. Action Menu Items (NvChad style buttons)
-	var menuRows []string
-	for i, item := range m.menuItems {
-		keyBadge := lipgloss.NewStyle().
-			Bold(true).
-			Foreground(m.theme.DarkFg).
-			Background(m.theme.NormalBg).
-			Padding(0, 1).
-			Render(item.Key)
-
-		prefix := "  "
-		itemStyle := lipgloss.NewStyle().Foreground(m.theme.TitleFg)
-		if i == m.cursor {
-			prefix = lipgloss.NewStyle().Foreground(m.theme.NormalBg).Bold(true).Render("❯ ")
-			itemStyle = lipgloss.NewStyle().Bold(true).Foreground(m.theme.NormalBg)
-		}
-
-		icon := lipgloss.NewStyle().Foreground(m.theme.SidebarBg).Render(item.Icon)
-		label := itemStyle.Render(item.Label)
-		desc := lipgloss.NewStyle().Foreground(m.theme.MutedFg).Render(item.Description)
-
-		row := fmt.Sprintf("%s%s  %s  %-18s  %s", prefix, keyBadge, icon, label, desc)
-		menuRows = append(menuRows, row)
+	for _, l := range lines {
+		rows = append(rows, pad+l.text)
 	}
-	menuBlock := strings.Join(menuRows, "\n")
-
-	// 4. Recent Documents Section
-	var recentBlock string
-	if len(m.recentPages) > 0 {
-		var recents []string
-		header := lipgloss.NewStyle().Bold(true).Foreground(m.theme.CommandBg).Render("Recent Documents")
-		recents = append(recents, header)
-
-		maxRecent := 4
-		if len(m.recentPages) < maxRecent {
-			maxRecent = len(m.recentPages)
-		}
-		for i := 0; i < maxRecent; i++ {
-			p := m.recentPages[i]
-			title := p.Title
-			if title == "" {
-				title = "Untitled"
-			}
-			numBadge := lipgloss.NewStyle().Bold(true).Foreground(m.theme.NormalBg).Render(fmt.Sprintf("%d.", i+1))
-			docTitle := lipgloss.NewStyle().Foreground(m.theme.TitleFg).Render(title)
-			recents = append(recents, fmt.Sprintf("  󰈙 %s %s", numBadge, docTitle))
-		}
-		recentBlock = strings.Join(recents, "\n")
-	}
-
-	// 5. Footer Stats
-	footer := lipgloss.NewStyle().
-		Foreground(m.theme.MutedFg).
-		Render(fmt.Sprintf("󱐋 Tsuzuri  •  %d document(s)  •  j/k navigate  •  Enter select  •  q quit", len(m.recentPages)))
-
-	// Compose stack
-	var sections []string
-	sections = append(sections, bannerBlock, "", subtitle, "", menuBlock)
-	if recentBlock != "" {
-		sections = append(sections, "", recentBlock)
-	}
-	sections = append(sections, "", footer)
-
-	stack := lipgloss.JoinVertical(lipgloss.Center, sections...)
-	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, stack)
+	return ui.Fit(strings.Join(rows, "\n"), m.width, m.height, lipgloss.NewStyle())
 }

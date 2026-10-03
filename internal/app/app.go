@@ -3,15 +3,18 @@ package app
 
 import (
 	"fmt"
+	"os"
+	"path"
+	"path/filepath"
 	"strings"
 
-	"tsuzuri/internal/content"
-	"tsuzuri/internal/core"
-	"tsuzuri/internal/dashboard"
-	"tsuzuri/internal/header"
-	"tsuzuri/internal/preview"
-	"tsuzuri/internal/sidebar"
-	"tsuzuri/internal/theme"
+	"github.com/jaisuriya-11/tsuzuri/internal/content"
+	"github.com/jaisuriya-11/tsuzuri/internal/core"
+	"github.com/jaisuriya-11/tsuzuri/internal/dashboard"
+	"github.com/jaisuriya-11/tsuzuri/internal/preview"
+	"github.com/jaisuriya-11/tsuzuri/internal/sidebar"
+	"github.com/jaisuriya-11/tsuzuri/internal/theme"
+	"github.com/jaisuriya-11/tsuzuri/internal/ui"
 
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
@@ -35,71 +38,106 @@ const (
 
 // Model represents the root App container state.
 type Model struct {
-	store         *core.Store
-	theme         theme.Theme
-	keys          KeyMap
-	focus         focus
-	viewMode      viewMode
-	selectedID    string
-	statusMessage string
+	store    *core.Store
+	theme    theme.Theme
+	keys     KeyMap
+	focus    focus
+	viewMode viewMode
 
 	width  int
 	height int
 
 	sidebarOpen   bool
+	previewOpen   bool
 	showKeymap    bool
 	leaderPending bool
 
+	// Open tabs, in order. Unsaved text lives in the buffers, never on disk.
+	buffers  []*buffer
+	active   string
+	draftSeq int
+
+	confirm *confirmDialog
+	saveAs  *saveAsDialog
+	finder  *finder
+	themes  *themePicker
+	browser *fileBrowser
+
+	promptBox *promptDialog
+	menuBox   *menuDialog
+
+	configPath string // where the theme choice is saved ("" = don't save)
+	quitting   bool   // "Save All" before quitting is in progress
+
+	status    string
+	statusErr bool
+
+	writeClipboard func(string) error
+
+	toast    string
+	toastSeq int
+	dragging bool // a mouse drag started in the editor
+
 	dashboard dashboard.Model
-	header    header.Model
 	sidebar   sidebar.Model
 	content   content.Model
 	preview   preview.Model
 }
 
-// New constructs the root App container initialized with a core.Store.
-func New(store *core.Store) Model {
+// Option customises the app at construction.
+type Option func(*Model)
+
+// WithTheme starts with the named base46 theme (unknown names are ignored).
+func WithTheme(name string) Option {
+	return func(m *Model) {
+		if th, ok := theme.Get(name); ok {
+			m.applyTheme(th, false)
+		}
+	}
+}
+
+// WithClipboard replaces the system clipboard writer (used by tests).
+func WithClipboard(write func(string) error) Option {
+	return func(m *Model) { m.writeClipboard = write }
+}
+
+// WithConfigPath saves theme changes to the given config file.
+func WithConfigPath(path string) Option {
+	return func(m *Model) { m.configPath = path }
+}
+
+// New constructs the root App container for a workspace on disk. Nothing is
+// seeded and nothing is opened until the user asks.
+func New(store *core.Store, opts ...Option) Model {
 	th := theme.DefaultTheme()
-	km := DefaultKeyMap()
 
-	db := dashboard.New(th)
-	hd := header.New(th)
-	sb := sidebar.New(th)
-	ct := content.New(th)
-	pv := preview.New(th)
-
-	pages := store.List()
-	sb.SetPages(pages)
-	ct.SetPages(pages)
-
-	var selectedID string
-	if len(pages) > 0 {
-		selectedID = pages[0].ID
-		sb.SetSelectedID(selectedID)
-		ct.SetPage(pages[0])
-		hd.SetPage(pages[0])
-		pv.SetPage(pages[0])
+	m := Model{
+		store:       store,
+		theme:       th,
+		keys:        DefaultKeyMap(),
+		focus:       focusSidebar,
+		viewMode:    viewModeDashboard,
+		sidebarOpen: true,
+		previewOpen: true,
+		dashboard:   dashboard.New(th),
+		sidebar:     sidebar.New(th),
+		content:     content.New(th),
+		preview:     preview.New(th),
 	}
-
-	ct.SetFocused(true)
-	db.SetRecentPages(pages)
-
-	return Model{
-		store:         store,
-		theme:         th,
-		keys:          km,
-		focus:         focusEditor,
-		viewMode:      viewModeDashboard,
-		selectedID:    selectedID,
-		sidebarOpen:   true,
-		showKeymap:    false,
-		leaderPending: false,
-		dashboard:     db,
-		header:        hd,
-		sidebar:       sb,
-		content:       ct,
-		preview:       pv,
+	m.sidebar.SetWorkspaceName(filepath.Base(store.Root()))
+	m.dashboard.SetWorkspace(tildePath(store.Root()))
+	m.reloadTree()
+	for _, opt := range opts {
+		opt(&m)
 	}
+	return m
+}
+
+func tildePath(p string) string {
+	if home, err := os.UserHomeDir(); err == nil && home != "" && strings.HasPrefix(p, home) {
+		return "~" + strings.TrimPrefix(p, home)
+	}
+	return p
 }
 
 // Init initializes child component commands.
@@ -107,508 +145,691 @@ func (m Model) Init() tea.Cmd {
 	return m.content.Init()
 }
 
+func (m *Model) layout() Layout {
+	return CalculateLayout(m.width, m.height, m.sidebarOpen, m.previewOpen)
+}
+
 // updateLayout recalculates dimensions across child panes.
 func (m *Model) updateLayout() {
-	headerHeight := 0
-	footerHeight := 1
-	sidebarW, editorW, previewW, bodyH := CalculateLayout(m.width, m.height, headerHeight, footerHeight, m.sidebarOpen)
+	l := m.layout()
+	m.dashboard.SetSize(m.width, max(m.height-footerHeight, 1))
+	m.sidebar.SetSize(l.SidebarW, l.BodyH)
+	m.content.SetSize(l.EditorW, l.BodyH)
+	m.preview.SetSize(l.PreviewW, l.BodyH)
+	if m.focus == focusPreview && l.PreviewW == 0 {
+		m.focusPane(focusEditor)
+	}
+}
 
-	m.dashboard.SetSize(m.width, m.height)
-	m.header.SetSize(m.width, headerHeight)
-	m.sidebar.SetSize(sidebarW, bodyH)
-	m.content.SetSize(editorW, bodyH)
-	m.preview.SetSize(previewW, bodyH)
+func (m *Model) reloadTree() {
+	pages := m.store.List()
+	m.sidebar.SetPages(pages)
+	m.dashboard.SetRecentPages(pages)
+}
+
+func (m *Model) setStatus(s string) { m.status, m.statusErr = s, false }
+func (m *Model) setError(s string)  { m.status, m.statusErr = s, true }
+
+// focusPane moves keyboard focus, opening the target pane if it was hidden.
+func (m *Model) focusPane(f focus) tea.Cmd {
+	m.viewMode = viewModeWorkspace
+	if f == focusSidebar && !m.sidebarOpen {
+		m.sidebarOpen = true
+		m.updateLayout()
+	}
+	if f == focusPreview && m.layout().PreviewW == 0 {
+		f = focusEditor
+	}
+	m.focus = f
+	m.sidebar.SetFocused(f == focusSidebar)
+	m.preview.SetFocused(f == focusPreview)
+	if f == focusEditor {
+		return m.content.Focus()
+	}
+	m.content.SetFocused(false)
+	return nil
+}
+
+// panes lists the visible panes left to right.
+func (m *Model) panes() []focus {
+	l := m.layout()
+	var out []focus
+	if l.SidebarW > 0 {
+		out = append(out, focusSidebar)
+	}
+	out = append(out, focusEditor)
+	if l.PreviewW > 0 {
+		out = append(out, focusPreview)
+	}
+	return out
+}
+
+func (m *Model) movePane(delta int, wrap bool) tea.Cmd {
+	ps := m.panes()
+	i := 0
+	for j, p := range ps {
+		if p == m.focus {
+			i = j
+		}
+	}
+	i += delta
+	if wrap {
+		i = (i + len(ps)) % len(ps)
+	} else {
+		i = max(0, min(i, len(ps)-1))
+	}
+	return m.focusPane(ps[i])
+}
+
+// toggleSidebar is Ctrl+B: show and focus the explorer, or hide it when it
+// already has focus. Works from every editor mode.
+func (m *Model) toggleSidebar() tea.Cmd {
+	if m.sidebarOpen && m.focus == focusSidebar && m.viewMode == viewModeWorkspace {
+		m.sidebarOpen = false
+		m.updateLayout()
+		return m.focusPane(focusEditor)
+	}
+	if m.content.Mode() == content.ModeInsert {
+		m.content.ExitInsert()
+	}
+	return m.focusPane(focusSidebar)
+}
+
+func (m *Model) togglePreview() tea.Cmd {
+	m.previewOpen = !m.previewOpen
+	m.updateLayout()
+	if m.previewOpen && m.layout().PreviewW == 0 {
+		m.setStatus("Window too narrow for the preview")
+	}
+	if m.focus == focusPreview && !m.previewOpen {
+		return m.focusPane(focusEditor)
+	}
+	return nil
+}
+
+func (m *Model) startFind() tea.Cmd { return m.openFinder() }
+
+func (m *Model) goHome() {
+	m.stashActive()
+	m.reloadTree()
+	m.viewMode = viewModeDashboard
+	m.content.SetFocused(false)
+	m.sidebar.SetFocused(false)
 }
 
 // Update routes events down and handles events emitted up from child components.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	var cmds []tea.Cmd
-
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 		m.updateLayout()
+		return m, nil
+	case core.StatusMsg:
+		m.status, m.statusErr = msg.Text, msg.Error
+		return m, nil
+	case tea.KeyMsg:
+		m.status = ""
 	}
 
-	// 1. Handle Keymap Modal dismiss
+	// Modal layers own all input while open.
+	if m.saveAs != nil {
+		return m, m.saveAs.update(&m, msg)
+	}
+	if m.confirm != nil {
+		switch msg.(type) {
+		case tea.KeyMsg, tea.MouseMsg:
+			cmd, _ := m.confirm.update(&m, msg)
+			return m, cmd
+		}
+		return m, nil
+	}
+	if m.finder != nil {
+		return m, m.finder.update(&m, msg)
+	}
+	if m.themes != nil {
+		return m, m.themes.update(&m, msg)
+	}
+	if m.browser != nil {
+		return m, m.browser.update(&m, msg)
+	}
+	if m.promptBox != nil {
+		return m, m.promptBox.update(&m, msg)
+	}
+	if m.menuBox != nil {
+		switch msg.(type) {
+		case tea.KeyMsg, tea.MouseMsg:
+			return m, m.menuBox.update(&m, msg)
+		}
+		return m, nil
+	}
 	if m.showKeymap {
-		if keyMsg, ok := msg.(tea.KeyMsg); ok {
-			switch keyMsg.String() {
-			case "esc", "q", "space", "enter":
+		switch msg := msg.(type) {
+		case tea.KeyMsg:
+			switch msg.String() {
+			case "esc", "q", "?", "enter", " ", "space":
 				m.showKeymap = false
-				return m, nil
+			case "ctrl+c":
+				return m, m.requestQuit(false)
+			}
+		case tea.MouseMsg:
+			if msg.Action == tea.MouseActionPress {
+				m.showKeymap = false
 			}
 		}
 		return m, nil
 	}
 
-	// 2. Leader key detection (Space + h) or (?) for Keymap Modal
-	if keyMsg, ok := msg.(tea.KeyMsg); ok {
-		canUseLeader := m.viewMode == viewModeWorkspace &&
-			((m.focus == focusSidebar && !m.sidebar.IsRenaming() && !m.sidebar.IsSearching()) ||
-				(m.focus == focusPreview) ||
-				(m.focus == focusEditor && m.content.Mode() == content.ModeNormal))
-
-		if canUseLeader {
-			if m.leaderPending {
-				m.leaderPending = false
-				if keyMsg.String() == "h" {
-					m.showKeymap = true
-					return m, nil
-				}
-			} else if keyMsg.String() == " " {
-				m.leaderPending = true
-				return m, nil
-			} else if keyMsg.String() == "?" {
-				m.showKeymap = true
-				return m, nil
-			}
-		} else {
-			m.leaderPending = false
-		}
-	}
-
-	// 3. Dashboard View Handling
-	if m.viewMode == viewModeDashboard {
-		switch msg := msg.(type) {
-		case tea.KeyMsg:
-			switch {
-			case key.Matches(msg, m.keys.Quit) || msg.String() == "q":
-				return m, tea.Quit
-
-			case msg.String() == "n":
-				newPage, err := m.store.Create("")
-				if err != nil {
-					m.statusMessage = "Error creating page: " + err.Error()
-				} else {
-					m.selectedID = newPage.ID
-					pages := m.store.List()
-					m.sidebar.SetPages(pages)
-					m.content.SetPages(pages)
-					m.sidebar.SetSelectedID(newPage.ID)
-					m.content.SetPage(newPage)
-					m.header.SetPage(newPage)
-					m.preview.SetPage(newPage)
-					m.viewMode = viewModeWorkspace
-					m.focus = focusEditor
-					m.sidebar.SetFocused(false)
-					m.preview.SetFocused(false)
-					cmds = append(cmds, m.content.Focus())
-				}
-				return m, tea.Batch(cmds...)
-
-			case msg.String() == "f" || key.Matches(msg, m.keys.Tab):
-				m.viewMode = viewModeWorkspace
-				m.focus = focusSidebar
-				m.sidebar.SetFocused(true)
-				m.content.SetFocused(false)
-				m.preview.SetFocused(false)
-				return m, nil
-
-			case msg.String() == "enter":
-				action := m.dashboard.SelectedAction()
-				switch action {
-				case dashboard.ActionNewPage:
-					newPage, err := m.store.Create("")
-					if err != nil {
-						m.statusMessage = "Error creating page: " + err.Error()
-					} else {
-						m.selectedID = newPage.ID
-						pages := m.store.List()
-						m.sidebar.SetPages(pages)
-						m.content.SetPages(pages)
-						m.sidebar.SetSelectedID(newPage.ID)
-						m.content.SetPage(newPage)
-						m.header.SetPage(newPage)
-						m.preview.SetPage(newPage)
-						m.viewMode = viewModeWorkspace
-						m.focus = focusEditor
-						m.sidebar.SetFocused(false)
-						m.preview.SetFocused(false)
-						cmds = append(cmds, m.content.Focus())
-					}
-					return m, tea.Batch(cmds...)
-
-				case dashboard.ActionBrowse:
-					m.viewMode = viewModeWorkspace
-					m.focus = focusSidebar
-					m.sidebar.SetFocused(true)
-					m.content.SetFocused(false)
-					m.preview.SetFocused(false)
-					return m, nil
-
-				case dashboard.ActionQuit:
-					return m, tea.Quit
-				}
-
-			case msg.String() >= "1" && msg.String() <= "9":
-				idx := int(msg.String()[0] - '1')
-				pages := m.store.List()
-				if idx < len(pages) {
-					m.selectedID = pages[idx].ID
-					m.sidebar.SetPages(pages)
-					m.content.SetPages(pages)
-					m.sidebar.SetSelectedID(pages[idx].ID)
-					m.content.SetPage(pages[idx])
-					m.header.SetPage(pages[idx])
-					m.preview.SetPage(pages[idx])
-					m.viewMode = viewModeWorkspace
-					m.focus = focusEditor
-					m.sidebar.SetFocused(false)
-					m.preview.SetFocused(false)
-					cmds = append(cmds, m.content.Focus())
-					return m, tea.Batch(cmds...)
-				}
-			}
-		}
-
-		var cmd tea.Cmd
-		m.dashboard, cmd = m.dashboard.Update(msg)
-		return m, cmd
-	}
-
-	// 4. Workspace View Handling
 	switch msg := msg.(type) {
-	case tea.KeyMsg:
-		switch {
-		case key.Matches(msg, m.keys.Quit):
-			return m, tea.Quit
-
-		case key.Matches(msg, m.keys.ToggleSidebar):
-			m.sidebarOpen = !m.sidebarOpen
-			if !m.sidebarOpen && m.focus == focusSidebar {
-				m.focus = focusEditor
-				m.sidebar.SetFocused(false)
-				m.content.SetFocused(true)
-			}
-			m.updateLayout()
-			return m, nil
-
-		case key.Matches(msg, m.keys.Dashboard):
-			m.dashboard.SetRecentPages(m.store.List())
-			m.viewMode = viewModeDashboard
-			return m, nil
-
-		case msg.String() == "esc" && m.focus == focusSidebar && !m.sidebar.IsRenaming() && !m.sidebar.IsSearching():
-			m.dashboard.SetRecentPages(m.store.List())
-			m.viewMode = viewModeDashboard
-			return m, nil
-
-		case msg.String() == "esc" && m.focus == focusPreview:
-			m.focus = focusEditor
-			m.preview.SetFocused(false)
-			m.content.SetFocused(true)
-			return m, nil
-
-		case key.Matches(msg, m.keys.Tab):
-			switch m.focus {
-			case focusSidebar:
-				if !m.sidebar.IsRenaming() && !m.sidebar.IsSearching() {
-					m.focus = focusEditor
-					m.sidebar.SetFocused(false)
-					m.preview.SetFocused(false)
-					cmds = append(cmds, m.content.Focus())
-				}
-			case focusEditor:
-				if m.content.Mode() == content.ModeNormal {
-					m.focus = focusPreview
-					m.sidebar.SetFocused(false)
-					m.content.SetFocused(false)
-					m.preview.SetFocused(true)
-				}
-			case focusPreview:
-				if m.sidebarOpen {
-					m.focus = focusSidebar
-					m.sidebar.SetFocused(true)
-					m.content.SetFocused(false)
-					m.preview.SetFocused(false)
-				} else {
-					m.focus = focusEditor
-					m.sidebar.SetFocused(false)
-					m.preview.SetFocused(false)
-					cmds = append(cmds, m.content.Focus())
-				}
-			}
-
-		case msg.String() == "]" || msg.String() == "[":
-			canCycle := (m.focus == focusEditor && m.content.Mode() == content.ModeNormal) ||
-				(m.focus == focusSidebar && !m.sidebar.IsRenaming() && !m.sidebar.IsSearching()) ||
-				(m.focus == focusPreview)
-			if canCycle {
-				pages := m.store.List()
-				if len(pages) > 1 {
-					currIdx := 0
-					for i, p := range pages {
-						if p.ID == m.selectedID {
-							currIdx = i
-							break
-						}
-					}
-					nextIdx := currIdx + 1
-					if msg.String() == "[" {
-						nextIdx = currIdx - 1 + len(pages)
-					}
-					nextIdx %= len(pages)
-					nextPage := pages[nextIdx]
-					m.selectedID = nextPage.ID
-					m.sidebar.SetSelectedID(nextPage.ID)
-					m.content.SetPage(nextPage)
-					m.header.SetPage(nextPage)
-					m.preview.SetPage(nextPage)
-					m.content.SetPages(pages)
-					return m, nil
-				}
-			}
-
-		case key.Matches(msg, m.keys.NewPage):
-			newPage, err := m.store.Create("")
-			if err != nil {
-				m.statusMessage = "Error creating page: " + err.Error()
-			} else {
-				m.selectedID = newPage.ID
-				pages := m.store.List()
-				m.sidebar.SetPages(pages)
-				m.content.SetPages(pages)
-				m.sidebar.SetSelectedID(newPage.ID)
-				m.content.SetPage(newPage)
-				m.header.SetPage(newPage)
-				m.preview.SetPage(newPage)
-				m.focus = focusEditor
-				m.sidebar.SetFocused(false)
-				m.preview.SetFocused(false)
-				cmds = append(cmds, m.content.Focus())
-			}
-		}
-
-	// Domain message bus
 	case core.PageSelectedMsg:
-		m.selectedID = msg.ID
-		if p, err := m.store.Get(msg.ID); err == nil {
-			m.content.SetPage(p)
-			m.header.SetPage(p)
-			m.preview.SetPage(p)
-		} else {
-			m.statusMessage = "Error loading page: " + err.Error()
+		if msg.KeepFocus {
+			keep := m.focus
+			m.openFile(msg.ID)
+			return m, m.focusPane(keep)
 		}
-
-	case core.PageCreatedMsg:
-		var newPage core.Page
-		var err error
-		if msg.Page.ParentID != "" {
-			newPage, err = m.store.CreateChild(msg.Page.ParentID, msg.Page.Title)
-		} else {
-			newPage, err = m.store.Create(msg.Page.Title)
+		return m, m.openFile(msg.ID)
+	case core.FindRequestMsg:
+		return m, m.openFinder()
+	case preview.HitMsg:
+		return m, m.handleViewHit(msg.Hit)
+	case core.CopyMsg:
+		return m, m.copyText(msg.Text)
+	case toastExpiredMsg:
+		if msg.id == m.toastSeq {
+			m.toast = ""
 		}
-		if err != nil {
-			m.statusMessage = "Error creating page: " + err.Error()
-		} else {
-			m.selectedID = newPage.ID
-			pages := m.store.List()
-			m.sidebar.SetPages(pages)
-			m.content.SetPages(pages)
-			m.sidebar.SetSelectedID(newPage.ID)
-			m.content.SetPage(newPage)
-			m.header.SetPage(newPage)
-			m.preview.SetPage(newPage)
-			if m.focus == focusSidebar {
-				cmds = append(cmds, m.sidebar.StartRenaming())
-			} else {
-				m.focus = focusEditor
-				m.sidebar.SetFocused(false)
-				m.preview.SetFocused(false)
-				cmds = append(cmds, m.content.Focus())
+		return m, nil
+	case core.SlashActionMsg:
+		switch msg.Action {
+		case "page":
+			parent := m.sidebar.ContextParentID()
+			if b := m.activeBuffer(); b != nil && !b.draft() {
+				parent = b.id
 			}
+			return m, m.newDraft(parent)
+		case "link":
+			return m, m.openLinkPicker()
 		}
-
-	case core.PageUpdatedMsg:
-		if err := m.store.Update(msg.Page); err != nil {
-			m.statusMessage = "Error updating page: " + err.Error()
-		} else {
-			pages := m.store.List()
-			m.sidebar.SetPages(pages)
-			m.content.SetPages(pages)
-			if msg.Page.ID == m.selectedID {
-				m.header.SetPage(msg.Page)
-				m.preview.SetTitle(msg.Page.Title)
-			}
+		if kind, ok := strings.CutPrefix(msg.Action, "media:"); ok {
+			return m, m.pickMedia(kind)
 		}
-
-	case core.PageDeletedMsg:
-		if err := m.store.Delete(msg.ID); err != nil {
-			m.statusMessage = "Error deleting page: " + err.Error()
-		} else {
-			pages := m.store.List()
-			m.sidebar.SetPages(pages)
-			m.content.SetPages(pages)
-			if len(pages) > 0 {
-				m.sidebar.SetSelectedID(pages[0].ID)
-				if p, err := m.store.Get(pages[0].ID); err == nil {
-					m.selectedID = p.ID
-					m.content.SetPage(p)
-					m.header.SetPage(p)
-					m.preview.SetPage(p)
-				}
-			}
-		}
-
-	case core.VimSaveMsg:
-		if p, err := m.store.Get(m.selectedID); err == nil {
-			p.Content = msg.Content
-			if updateErr := m.store.Update(p); updateErr != nil {
-				m.statusMessage = "Error saving page: " + updateErr.Error()
-			} else {
-				pages := m.store.List()
-				m.sidebar.SetPages(pages)
-				m.content.SetPages(pages)
-				m.preview.SetContent(msg.Content)
-			}
-		} else {
-			m.statusMessage = "Error saving page: " + err.Error()
-		}
-
-	case core.VimQuitMsg:
-		if msg.Save {
-			if p, err := m.store.Get(m.selectedID); err == nil {
-				p.Content = m.content.Value()
-				_ = m.store.Update(p)
-			}
-		}
-		return m, tea.Quit
-	}
-
-	// Update Header component mode indicator
-	switch m.focus {
-	case focusSidebar:
-		m.header.SetPaneFocus("SIDEBAR", m.content.ModeString())
-	case focusPreview:
-		m.header.SetPaneFocus("PREVIEW", m.content.ModeString())
-	default:
-		m.header.SetPaneFocus("EDITOR", m.content.ModeString())
-	}
-
-	if m.focus == focusSidebar {
-		var cmd tea.Cmd
-		m.sidebar, cmd = m.sidebar.Update(msg)
-		cmds = append(cmds, cmd)
-	} else if m.focus == focusPreview {
-		var cmd tea.Cmd
-		m.preview, cmd = m.preview.Update(msg)
-		cmds = append(cmds, cmd)
-	} else {
-		var cmd tea.Cmd
-		m.content, cmd = m.content.Update(msg)
-		cmds = append(cmds, cmd)
-		// Real-time Markdown compilation on every keystroke!
-		m.preview.SetContent(m.content.Value())
-	}
-
-	return m, tea.Batch(cmds...)
-}
-
-// renderBottomBar renders the unified bottom status bar across the full terminal width in NvChad NvUI v3.0 style.
-func (m Model) renderBottomBar() string {
-	var modeTag string
-	switch m.focus {
-	case focusSidebar:
-		modeTag = lipgloss.NewStyle().Bold(true).Background(m.theme.SidebarBg).Foreground(m.theme.DarkFg).Padding(0, 1).Render("󰉋 TREE")
-	case focusPreview:
-		modeTag = lipgloss.NewStyle().Bold(true).Background(m.theme.CommandBg).Foreground(m.theme.DarkFg).Padding(0, 1).Render("󰈈 PREVIEW")
-	default:
-		switch m.content.Mode() {
-		case content.ModeInsert:
-			modeTag = lipgloss.NewStyle().Bold(true).Background(m.theme.InsertBg).Foreground(m.theme.DarkFg).Padding(0, 1).Render("󰏫 INSERT")
-		case content.ModeCommand:
-			modeTag = lipgloss.NewStyle().Bold(true).Background(m.theme.CommandBg).Foreground(m.theme.DarkFg).Padding(0, 1).Render("󰘳 COMMAND")
+		return m, nil
+	case mediaPickedMsg:
+		switch {
+		case msg.unavailable:
+			return m, m.openFileBrowser(msg.kind)
+		case msg.err != nil:
+			m.setError("File dialog failed: " + msg.err.Error())
+		case msg.cancelled || msg.path == "":
+			m.setStatus("")
 		default:
-			modeTag = lipgloss.NewStyle().Bold(true).Background(m.theme.NormalBg).Foreground(m.theme.DarkFg).Padding(0, 1).Render(" NORMAL")
+			m.attachMedia(msg.kind, msg.path)
+		}
+		return m, nil
+	case core.ThemeMsg:
+		if msg.Name == "" {
+			return m, m.openThemePicker()
+		}
+		m.setThemeByName(msg.Name)
+		return m, nil
+	case core.PageCreatedMsg:
+		return m, m.newDraft(msg.Page.ParentID)
+	case core.PageUpdatedMsg:
+		m.renamePage(msg.Page.ID, msg.Page.Title)
+		return m, nil
+	case core.PageDeletedMsg:
+		m.confirmDelete(msg.ID)
+		return m, nil
+	case core.VimSaveMsg:
+		return m, m.handleSave(msg)
+	case core.VimQuitMsg:
+		return m, m.handleQuit(msg)
+	case core.VimCloseBufferMsg:
+		return m, m.closeBuffer(m.active, msg.Force)
+	case core.VimNewBufferMsg:
+		return m, m.newDraft(m.sidebar.ContextParentID())
+	case tea.MouseMsg:
+		return m, m.handleMouse(msg)
+	case tea.KeyMsg:
+		return m, m.handleKey(msg)
+	}
+
+	// Anything else (cursor blinks etc.) goes to the components that animate.
+	var c1, c2 tea.Cmd
+	m.sidebar, c1 = m.sidebar.Update(msg)
+	m.content, c2 = m.content.Update(msg)
+	return m, tea.Batch(c1, c2)
+}
+
+func (m *Model) handleSave(msg core.VimSaveMsg) tea.Cmd {
+	b := m.activeBuffer()
+	if b == nil {
+		m.setError("E32: No file name")
+		return nil
+	}
+	if msg.Path != "" {
+		dir, name := path.Split(strings.TrimPrefix(filepath.ToSlash(msg.Path), "/"))
+		if err := m.saveBufferAs(b, dir, name); err != nil {
+			m.setError(err.Error())
+		}
+		return nil
+	}
+	return m.saveBuffer(b, nil)
+}
+
+func (m *Model) handleQuit(msg core.VimQuitMsg) tea.Cmd {
+	if msg.Save {
+		if b := m.activeBuffer(); b != nil {
+			return m.saveBuffer(b, func(m *Model) tea.Cmd { return m.requestQuit(false) })
 		}
 	}
-
-	docTitle := "Untitled"
-	if p, err := m.store.Get(m.selectedID); err == nil && p.Title != "" {
-		docTitle = p.Title
-	}
-	if !strings.HasSuffix(docTitle, ".md") {
-		docTitle += ".md"
-	}
-	filePill := lipgloss.NewStyle().
-		Bold(true).
-		Foreground(m.theme.TitleFg).
-		Background(m.theme.SelectedBg).
-		Padding(0, 1).
-		Render(" " + docTitle)
-
-	var hint string
-	if m.statusMessage != "" {
-		hint = "  " + lipgloss.NewStyle().Foreground(m.theme.NormalBg).Render(m.statusMessage)
-	} else {
-		hint = "  " + lipgloss.NewStyle().Foreground(m.theme.MutedFg).Render("i insert • Esc normal • :wq save")
-	}
-	leftContent := modeTag + " " + filePill + hint
-
-	previewStatus := lipgloss.NewStyle().Bold(true).Foreground(m.theme.CommandBg).Render("󰈈 " + m.preview.ScrollStatus())
-	fileTypePill := lipgloss.NewStyle().Foreground(m.theme.MutedFg).Render("󰈙 markdown")
-	tabHint := lipgloss.NewStyle().Foreground(m.theme.MutedFg).Render("[/] tabs")
-	keymapHint := lipgloss.NewStyle().Bold(true).Foreground(m.theme.NormalBg).Render("󰌌 space+h")
-	rightContent := previewStatus + "   " + fileTypePill + "   " + tabHint + "   " + keymapHint
-
-	leftW := lipgloss.Width(leftContent)
-	rightW := lipgloss.Width(rightContent)
-	gap := m.width - leftW - rightW - 2
-	if gap < 1 {
-		gap = 1
-	}
-
-	line := leftContent + strings.Repeat(" ", gap) + rightContent
-	return lipgloss.NewStyle().
-		Width(m.width).
-		Height(1).
-		Padding(0, 1).
-		Background(m.theme.DarkFg).
-		Render(line)
+	return m.requestQuit(msg.Force)
 }
+
+func (m *Model) renamePage(id, title string) {
+	m.stashActive()
+	updated, err := m.store.Rename(id, title)
+	if err != nil {
+		m.setError("Rename failed: " + err.Error())
+		return
+	}
+	activeBefore := m.active
+	m.remapBuffers(id, updated.ID)
+	m.reloadTree()
+	m.sidebar.SetSelectedID(updated.ID)
+	if b := m.activeBuffer(); b != nil && m.active != activeBefore {
+		m.content.SetBuffer(b.page(), false)
+		m.preview.SetBaseDir(m.noteDir(b))
+		m.preview.SetPage(b.page())
+		m.sidebar.SetActiveID(b.id)
+	}
+	m.setStatus("Renamed to " + updated.ID)
+}
+
+func (m *Model) confirmDelete(id string) {
+	p, err := m.store.Get(id)
+	if err != nil {
+		m.setError("Not found: " + id)
+		return
+	}
+	msg := []string{"The file is removed from disk. This cannot be undone."}
+	if p.IsFolder {
+		msg = []string{"The folder and everything inside it are removed from disk.", "This cannot be undone."}
+	} else if sidecar := strings.TrimSuffix(id, ".md"); sidecar != id {
+		if info, err := os.Stat(filepath.Join(m.store.Root(), filepath.FromSlash(sidecar))); err == nil && info.IsDir() {
+			msg = []string{"The note and all of its sub-notes are removed from disk.", "This cannot be undone."}
+		}
+	}
+	m.confirm = &confirmDialog{
+		title:   "Delete " + id + "?",
+		message: msg,
+		buttons: []string{"Delete", "Cancel"},
+		danger:  true,
+		onChoose: func(m *Model, choice int) tea.Cmd {
+			if choice != 0 {
+				return nil
+			}
+			if err := m.store.Delete(id); err != nil {
+				m.setError("Delete failed: " + err.Error())
+				return nil
+			}
+			m.dropBuffersUnder(id)
+			m.reloadTree()
+			m.refreshModified()
+			m.setStatus("Deleted " + id)
+			if len(m.buffers) == 0 && len(m.store.List()) == 0 {
+				m.goHome()
+			}
+			return nil
+		},
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Keyboard
+
+func (m *Model) handleKey(k tea.KeyMsg) tea.Cmd {
+	s := k.String()
+	if key.Matches(k, m.keys.Quit) {
+		return m.requestQuit(false)
+	}
+	if m.viewMode == viewModeDashboard {
+		return m.handleDashboardKey(k)
+	}
+
+	sidebarBusy := m.focus == focusSidebar && m.sidebar.IsBusy()
+	editorBusy := m.focus == focusEditor && m.content.Mode() != content.ModeNormal
+
+	// VSCode-style shortcuts work in every mode.
+	switch {
+	case key.Matches(k, m.keys.Save):
+		if b := m.activeBuffer(); b != nil {
+			return m.saveBuffer(b, nil)
+		}
+		return nil
+	case key.Matches(k, m.keys.NewPage) && !sidebarBusy:
+		return m.newDraft(m.sidebar.ContextParentID())
+	case key.Matches(k, m.keys.ToggleSidebar):
+		return m.toggleSidebar()
+	case key.Matches(k, m.keys.Find):
+		return m.startFind()
+	}
+
+	if !sidebarBusy && !editorBusy {
+		if m.leaderPending {
+			m.leaderPending = false
+			return m.handleLeader(s)
+		}
+		switch s {
+		case " ":
+			m.leaderPending = true
+			return nil
+		case "?":
+			m.showKeymap = true
+			return nil
+		case "tab":
+			return m.movePane(1, true)
+		case "shift+tab":
+			return m.movePane(-1, true)
+		case "ctrl+h":
+			return m.movePane(-1, false)
+		case "ctrl+l":
+			return m.movePane(1, false)
+		case "\\":
+			return m.openFinder()
+		case "[":
+			return m.cycleBuffer(-1)
+		case "]":
+			return m.cycleBuffer(1)
+		case "esc":
+			if m.focus != focusEditor && m.activeBuffer() != nil {
+				return m.focusPane(focusEditor)
+			}
+		}
+	}
+	m.leaderPending = false
+
+	var cmd tea.Cmd
+	switch m.focus {
+	case focusSidebar:
+		m.sidebar, cmd = m.sidebar.Update(k)
+	case focusPreview:
+		m.preview, cmd = m.preview.Update(k)
+	default:
+		if m.activeBuffer() == nil && s == "i" {
+			return m.newDraft(m.sidebar.ContextParentID())
+		}
+		m.content, cmd = m.content.Update(k)
+		if b := m.activeBuffer(); b != nil {
+			m.preview.SetContent(m.content.Value())
+			m.refreshModified()
+		}
+	}
+	return cmd
+}
+
+// handleLeader runs NvChad-style <Space> mappings.
+func (m *Model) handleLeader(s string) tea.Cmd {
+	switch s {
+	case "e":
+		return m.focusPane(focusSidebar)
+	case "f":
+		return m.startFind()
+	case "n":
+		return m.newDraft(m.sidebar.ContextParentID())
+	case "x":
+		return m.closeBuffer(m.active, false)
+	case "p":
+		return m.togglePreview()
+	case "tab":
+		return m.cycleBuffer(1)
+	case "shift+tab":
+		return m.cycleBuffer(-1)
+	case "t":
+		return m.openThemePicker()
+	case "d":
+		m.goHome()
+	case "h", "?":
+		m.showKeymap = true
+	case "w":
+		if b := m.activeBuffer(); b != nil {
+			return m.saveBuffer(b, nil)
+		}
+	}
+	return nil
+}
+
+func (m *Model) handleDashboardKey(k tea.KeyMsg) tea.Cmd {
+	s := k.String()
+	switch s {
+	case "n", "ctrl+n":
+		return m.newDraft("")
+	case "f", "\\", "ctrl+p":
+		return m.startFind()
+	case "e", "ctrl+b":
+		return m.focusPane(focusSidebar)
+	case "?":
+		m.showKeymap = true
+		return nil
+	case "t":
+		return m.openThemePicker()
+	case "q":
+		return m.requestQuit(false)
+	case "esc":
+		if m.activeBuffer() != nil {
+			return m.focusPane(focusEditor)
+		}
+		return nil
+	case "enter":
+		a, id := m.dashboard.SelectedAction()
+		return m.runDashboardAction(a, id)
+	}
+	if len(s) == 1 && s[0] >= '1' && s[0] <= '9' {
+		if i := int(s[0] - '1'); i < len(m.dashboard.RecentPages()) {
+			return m.openFile(m.dashboard.RecentPages()[i].ID)
+		}
+		return nil
+	}
+	m.dashboard, _ = m.dashboard.Update(k)
+	return nil
+}
+
+func (m *Model) runDashboardAction(a dashboard.Action, id string) tea.Cmd {
+	switch a {
+	case dashboard.ActionNewPage:
+		return m.newDraft("")
+	case dashboard.ActionFind:
+		return m.startFind()
+	case dashboard.ActionBrowse:
+		return m.focusPane(focusSidebar)
+	case dashboard.ActionKeymap:
+		m.showKeymap = true
+	case dashboard.ActionQuit:
+		return m.requestQuit(false)
+	case dashboard.ActionOpenRecent:
+		return m.openFile(id)
+	case dashboard.ActionThemes:
+		return m.openThemePicker()
+	}
+	return nil
+}
+
+// ---------------------------------------------------------------------------
+// Mouse
+
+func (m *Model) handleMouse(msg tea.MouseMsg) tea.Cmd {
+	if m.viewMode == viewModeDashboard {
+		if msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft {
+			if a, id, ok := m.dashboard.Click(msg.X, msg.Y); ok {
+				return m.runDashboardAction(a, id)
+			}
+		}
+		return nil
+	}
+	l := m.layout()
+	// Drags that start in the editor keep going there (text selection).
+	if msg.Action == tea.MouseActionMotion || msg.Action == tea.MouseActionRelease {
+		if !m.dragging {
+			return nil
+		}
+		if msg.Action == tea.MouseActionRelease {
+			m.dragging = false
+		}
+		local := msg
+		local.X -= l.EditorX
+		local.Y -= l.BodyY
+		var cmd tea.Cmd
+		m.content, cmd = m.content.Update(local)
+		return cmd
+	}
+	if msg.Action != tea.MouseActionPress {
+		return nil
+	}
+
+	if msg.Y == 0 {
+		return m.handleTabClick(msg)
+	}
+	if msg.Y < l.BodyY || msg.Y >= l.BodyY+l.BodyH {
+		return nil
+	}
+
+	wheel := msg.Button == tea.MouseButtonWheelUp || msg.Button == tea.MouseButtonWheelDown
+	if !wheel && msg.Button != tea.MouseButtonLeft {
+		return nil
+	}
+
+	local := msg
+	local.Y -= l.BodyY
+	var target focus
+	switch {
+	case msg.X < l.SidebarW:
+		target = focusSidebar
+	case msg.X >= l.EditorX && msg.X < l.EditorX+l.EditorW:
+		target, local.X = focusEditor, msg.X-l.EditorX
+	case l.PreviewW > 0 && msg.X >= l.PreviewX:
+		target, local.X = focusPreview, msg.X-l.PreviewX
+	default:
+		return nil // a divider
+	}
+
+	var cmds []tea.Cmd
+	if !wheel && m.focus != target {
+		cmds = append(cmds, m.focusPane(target))
+	}
+	var cmd tea.Cmd
+	switch target {
+	case focusSidebar:
+		m.sidebar, cmd = m.sidebar.Update(local)
+	case focusEditor:
+		m.dragging = msg.Button == tea.MouseButtonLeft
+		m.content, cmd = m.content.Update(local)
+	case focusPreview:
+		m.preview, cmd = m.preview.Update(local)
+	}
+	return tea.Batch(append(cmds, cmd)...)
+}
+
+func (m *Model) handleTabClick(msg tea.MouseMsg) tea.Cmd {
+	hit := m.tabAt(msg.X)
+	switch msg.Button {
+	case tea.MouseButtonMiddle:
+		if hit.kind == hitTab || hit.kind == hitClose {
+			return m.closeBuffer(hit.id, false)
+		}
+		return nil
+	case tea.MouseButtonWheelUp:
+		return m.cycleBuffer(-1)
+	case tea.MouseButtonWheelDown:
+		return m.cycleBuffer(1)
+	case tea.MouseButtonLeft:
+	default:
+		return nil
+	}
+	switch hit.kind {
+	case hitTab:
+		if i := m.bufferIndex(hit.id); i >= 0 {
+			m.showBuffer(m.buffers[i])
+			return m.focusPane(focusEditor)
+		}
+	case hitClose:
+		return m.closeBuffer(hit.id, false)
+	case hitNew:
+		return m.newDraft(m.sidebar.ContextParentID())
+	case hitExplorer:
+		return m.focusPane(focusSidebar)
+	}
+	return nil
+}
+
+// ---------------------------------------------------------------------------
+// View
 
 // View composes child component views into the complete terminal layout.
 func (m Model) View() string {
 	if m.width == 0 || m.height == 0 {
 		return "loading…"
 	}
-
-	// Guard against terminal window being too small
 	if m.width < MinTermWidth || m.height < MinTermHeight {
-		warningStyle := lipgloss.NewStyle().
-			Width(m.width).
-			Height(m.height).
+		return lipgloss.NewStyle().
+			Width(m.width).Height(m.height).
 			Align(lipgloss.Center, lipgloss.Center).
-			Foreground(m.theme.NormalBg).
-			Bold(true)
-		return warningStyle.Render(fmt.Sprintf("Terminal window is too small (%dx%d).\nPlease resize to min %dx%d.", m.width, m.height, MinTermWidth, MinTermHeight))
+			Foreground(m.theme.Yellow).
+			Render(fmt.Sprintf("Terminal too small (%dx%d)\nResize to at least %dx%d", m.width, m.height, MinTermWidth, MinTermHeight))
 	}
 
-	// 1. Overlay Keymap Modal if open
-	if m.showKeymap {
-		return RenderKeymapModal(m.theme, m.width, m.height)
-	}
-
-	// 2. Dashboard View
+	var screen string
 	if m.viewMode == viewModeDashboard {
-		return m.dashboard.View()
-	}
-
-	// 3. Body Panes (Sidebar + Editor + Preview)
-	contentView := m.content.View()
-	previewView := m.preview.View()
-
-	var bodyView string
-	if m.sidebarOpen {
-		sidebarView := m.sidebar.View()
-		bodyView = lipgloss.JoinHorizontal(lipgloss.Top, sidebarView, contentView, previewView)
+		screen = lipgloss.JoinVertical(lipgloss.Left, m.dashboard.View(), m.bottomBar())
 	} else {
-		bodyView = lipgloss.JoinHorizontal(lipgloss.Top, contentView, previewView)
+		l := m.layout()
+		div := ui.Column("│", l.BodyH, lipgloss.NewStyle().Foreground(m.theme.Line))
+		var cols []string
+		if l.SidebarW > 0 {
+			cols = append(cols, m.sidebar.View(), div)
+		}
+		cols = append(cols, m.content.View())
+		if l.PreviewW > 0 {
+			cols = append(cols, div, m.preview.View())
+		}
+		tabs, _ := m.tabline()
+		screen = lipgloss.JoinVertical(lipgloss.Left,
+			tabs,
+			lipgloss.JoinHorizontal(lipgloss.Top, cols...),
+			m.bottomBar(),
+		)
 	}
 
-	// 4. Unified Bottom Status Bar
-	statusBarView := m.renderBottomBar()
-
-	return lipgloss.JoinVertical(lipgloss.Left, bodyView, statusBarView)
+	switch {
+	case m.saveAs != nil:
+		box, x, y := m.saveAs.view(m.theme, m.width, m.height)
+		screen = ui.Overlay(screen, box, x, y)
+	case m.confirm != nil:
+		box, x, y := m.confirm.view(m.theme, m.width, m.height)
+		screen = ui.Overlay(screen, box, x, y)
+	case m.finder != nil:
+		box, x, y := m.finder.view(&m)
+		screen = ui.Overlay(screen, box, x, y)
+	case m.themes != nil:
+		box, x, y := m.themes.view(&m)
+		screen = ui.Overlay(screen, box, x, y)
+	case m.browser != nil:
+		box, x, y := m.browser.view(&m)
+		screen = ui.Overlay(screen, box, x, y)
+	case m.promptBox != nil:
+		box, x, y := m.promptBox.view(&m)
+		screen = ui.Overlay(screen, box, x, y)
+	case m.menuBox != nil:
+		box, x, y := m.menuBox.view(&m)
+		screen = ui.Overlay(screen, box, x, y)
+	case m.viewMode == viewModeWorkspace && m.focus == focusEditor && m.content.SlashOpen():
+		if box, x, y, ok := m.content.SlashView(); ok {
+			l := m.layout()
+			screen = ui.Overlay(screen, box, l.EditorX+x, l.BodyY+y)
+		}
+	case m.showKeymap:
+		box := RenderKeymapModal(m.theme, m.width, m.height)
+		x, y := ui.Center(m.width, m.height, lipgloss.Width(box), lipgloss.Height(box))
+		screen = ui.Overlay(screen, box, x, y)
+	}
+	screen = m.renderToast(screen)
+	return ui.Paint(screen, lipgloss.NewStyle().Foreground(m.theme.Fg).Background(m.theme.Bg))
 }
