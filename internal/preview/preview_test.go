@@ -151,3 +151,16 @@ func TestViewBlocks(t *testing.T) {
 		}
 	}
 }
+
+func TestBoardCardDescriptions(t *testing.T) {
+	src := "```board\n## In progress\n- Card 2\ncant able to add description in cards\n- card 3\n## Done\n- Card 3\n```"
+	plain := ansi.Strip(preview.Compile(src, theme.DefaultTheme(), 80))
+	for _, want := range []string{"Card 2", "cant able to add", "card 3", "Done"} {
+		if !strings.Contains(plain, want) {
+			t.Errorf("missing %q in\n%s", want, plain)
+		}
+	}
+	if strings.Contains(plain, "● In progress  3") {
+		t.Errorf("a description line must not count as a card:\n%s", plain)
+	}
+}

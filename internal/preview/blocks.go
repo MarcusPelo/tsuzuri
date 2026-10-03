@@ -79,9 +79,14 @@ func center(s string, w int) string {
 // ---------------------------------------------------------------------------
 // Board
 
+type boardCard struct {
+	title string
+	desc  []string
+}
+
 type boardColumn struct {
 	name  string
-	cards []string
+	cards []boardCard
 }
 
 func statusColor(name string, i int, th theme.Theme) lipgloss.Color {
@@ -112,7 +117,12 @@ func renderBoard(body []string, th theme.Theme, width int) []string {
 			}
 			card := strings.TrimSpace(t[2:])
 			card = strings.TrimPrefix(strings.TrimPrefix(strings.TrimPrefix(card, "[ ] "), "[x] "), "[X] ")
-			cols[len(cols)-1].cards = append(cols[len(cols)-1].cards, card)
+			cols[len(cols)-1].cards = append(cols[len(cols)-1].cards, boardCard{title: card})
+		case t != "" && t != "-" && len(cols) > 0 && len(cols[len(cols)-1].cards) > 0:
+			// Any other text under a card is that card's description.
+			c := &cols[len(cols)-1]
+			last := &c.cards[len(c.cards)-1]
+			last.desc = append(last.desc, t)
 		}
 	}
 	if len(cols) == 0 {
@@ -138,8 +148,17 @@ func renderBoard(body []string, th theme.Theme, width int) []string {
 			Foreground(th.Fg).
 			Width(colW-2).
 			Padding(0, 1)
-		for _, txt := range c.cards {
-			lines = append(lines, strings.Split(card.Render(ui.Truncate(txt, (colW-4)*2)), "\n")...)
+		inner := colW - 4
+		for _, cd := range c.cards {
+			body := lipgloss.NewStyle().Bold(true).Render(ui.Truncate(cd.title, inner*2))
+			if len(cd.desc) > 0 {
+				desc := strings.Split(ansi.Wrap(strings.Join(cd.desc, " "), inner, ""), "\n")
+				if len(desc) > 4 {
+					desc = append(desc[:3], ui.Truncate(desc[3], inner-1)+"…")
+				}
+				body += "\n" + lipgloss.NewStyle().Foreground(th.GreyFg2).Render(strings.Join(desc, "\n"))
+			}
+			lines = append(lines, strings.Split(card.Render(body), "\n")...)
 		}
 		lines = append(lines, lipgloss.NewStyle().Foreground(color).Render(" + New page"))
 		for j := range lines {

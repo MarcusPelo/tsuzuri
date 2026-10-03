@@ -33,7 +33,7 @@
 - **96 NvChad themes.** Every base46 theme (onedark, catppuccin, gruvbox, tokyonight, rosepine, nord, everforest, kanagawa, the light ones …). `Space t` opens a picker that previews as you move; the choice is remembered.
 - **Notion-style `/` menu.** In INSERT mode, type `/` at the start of a line (or after a space) to insert headings, lists, to-dos, toggles, callouts, quotes, tables, dividers, code, a new sub-page or a link to another note. Keep typing to filter.
 - **Attach images and files.** `/image`, `/video`, `/audio` and `/file` open your system's file dialog (Finder on macOS, zenity/kdialog on Linux, the Windows file picker). The file is copied into an `assets/` folder next to the note and linked. Over SSH or without a desktop, a built-in browser opens instead (set `TSUZURI_NATIVE_PICKER=0` to always use it).
-- **Views from plain text.** `/board`, `/calendar`, `/timeline`, `/chart` and `/form` insert a fenced block you edit as text; the preview draws it as a Kanban board, a month calendar, a Gantt-style timeline, a pixel-art chart (bar, hbar, line, pie, donut) or a form:
+- **Views from plain text.** `/board`, `/calendar`, `/timeline`, `/chart` and `/form` insert a fenced block you edit as text (on a board, lines under a `- card` are its description); the preview draws it as a Kanban board, a month calendar, a Gantt-style timeline, a pixel-art chart (bar, hbar, line, pie, donut) or a form:
 
   ````markdown
   ```chart
