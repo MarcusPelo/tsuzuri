@@ -251,6 +251,8 @@ Leader is `Space`, as in NvChad. Press `?` or `Space h` in the app for the cheat
 
 ## Development
 
+Contributions are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, guidelines and how to send a pull request.
+
 ```bash
 make            # fmt, vet, test, build
 make test
