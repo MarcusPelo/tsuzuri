@@ -1,11 +1,13 @@
 package preview
 
 import (
+	"path/filepath"
 	"regexp"
 	"strings"
 
 	"github.com/jaisuriya-11/tsuzuri/internal/highlight"
 	"github.com/jaisuriya-11/tsuzuri/internal/theme"
+	"github.com/jaisuriya-11/tsuzuri/internal/ui"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
@@ -73,10 +75,11 @@ func newStyles(th theme.Theme) styles {
 
 // compiler accumulates rendered lines, collapsing runs of blank lines.
 type compiler struct {
-	st    styles
-	width int
-	out   []string
-	para  []string
+	st      styles
+	width   int
+	baseDir string // folder relative image paths resolve against
+	out     []string
+	para    []string
 }
 
 func (c *compiler) emit(lines ...string) {
@@ -117,10 +120,16 @@ func (c *compiler) flushPara() {
 // Compile parses raw Markdown text and returns a styled ANSI string using the
 // given Theme, wrapped to contentWidth columns.
 func Compile(input string, th theme.Theme, contentWidth int) string {
+	return CompileIn(input, th, contentWidth, "")
+}
+
+// CompileIn is Compile for a note stored in baseDir, so local images can be
+// found and drawn.
+func CompileIn(input string, th theme.Theme, contentWidth int, baseDir string) string {
 	if contentWidth < 10 {
 		contentWidth = 40
 	}
-	c := &compiler{st: newStyles(th), width: contentWidth}
+	c := &compiler{st: newStyles(th), width: contentWidth, baseDir: baseDir}
 
 	input = htmlCommentRegex.ReplaceAllString(strings.ReplaceAll(input, "\t", "    "), "")
 	lines := strings.Split(input, "\n")
@@ -151,6 +160,13 @@ func Compile(input string, th theme.Theme, contentWidth int) string {
 			}
 			i--
 			c.table(rows)
+			continue
+		}
+
+		// A line holding only an image is drawn as a picture.
+		if alt, src, ok := standaloneImage(line); ok {
+			c.flushPara()
+			c.image(alt, src)
 			continue
 		}
 
@@ -274,6 +290,26 @@ func (c *compiler) codeBlock(lang string, code []string) {
 	}
 	box := c.st.codeBox.Width(inner + 2).Render(strings.Join(code, "\n"))
 	c.emit(strings.Split(box, "\n")...)
+	c.blank()
+}
+
+func (c *compiler) image(alt, src string) {
+	label := lipgloss.NewStyle().Foreground(c.st.th.Purple)
+	path, err := resolveImage(src, c.baseDir)
+	var lines []string
+	if err == nil {
+		lines, err = renderImage(path, c.width, c.st.th.Bg)
+	}
+	if err != nil {
+		name := orDefault(alt, filepath.Base(src))
+		c.emit(label.Render("󰋩 "+name) + c.st.muted.Render(" ("+err.Error()+")"))
+		return
+	}
+	c.blank()
+	c.emit(lines...)
+	if strings.TrimSpace(alt) != "" {
+		c.emit(c.st.muted.Italic(true).Render(ui.Truncate(alt, c.width)))
+	}
 	c.blank()
 }
 

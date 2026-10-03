@@ -3,6 +3,7 @@ package app
 import (
 	"fmt"
 	"path"
+	"path/filepath"
 	"strings"
 
 	"github.com/jaisuriya-11/tsuzuri/internal/core"
@@ -37,6 +38,15 @@ func (b *buffer) fileName() string {
 
 func (b *buffer) page() core.Page {
 	return core.Page{ID: b.id, Title: b.title, Content: b.text}
+}
+
+// noteDir is the absolute folder a buffer's note lives (or will live) in.
+func (m *Model) noteDir(b *buffer) string {
+	rel := b.dir
+	if !b.draft() {
+		rel = path.Dir(b.id)
+	}
+	return filepath.Join(m.store.Root(), filepath.FromSlash(rel))
 }
 
 func (m *Model) bufferIndex(id string) int {
@@ -105,6 +115,7 @@ func (m *Model) showBuffer(b *buffer) {
 	m.stashActive()
 	m.active = b.id
 	m.content.SetBuffer(b.page(), b.draft())
+	m.preview.SetBaseDir(m.noteDir(b))
 	m.preview.SetPage(b.page())
 	m.sidebar.SetActiveID(b.id)
 	if !b.draft() {
@@ -268,6 +279,7 @@ func (m *Model) saveBufferAs(b *buffer, dir, name string) error {
 	m.reloadTree()
 	if wasActive {
 		m.content.SetBuffer(b.page(), false)
+		m.preview.SetBaseDir(m.noteDir(b))
 		m.preview.SetPage(b.page())
 		m.sidebar.SetActiveID(b.id)
 		m.sidebar.SetSelectedID(b.id)

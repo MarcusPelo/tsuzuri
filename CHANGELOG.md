@@ -13,6 +13,9 @@ All notable changes to this project are documented here. The format follows
   so light themes work on dark terminals.
 - Notion-style `/` block menu in INSERT mode (headings, lists, to-do, toggle,
   callout, quote, table, divider, code, media, sub-page, link to page).
+- Syntax highlighting (chroma, 250+ languages) for fenced code in the editor
+  and preview, plus Markdown colouring in the editor.
+- Local images are drawn in the preview with half-block characters.
 - `\` opens the finder (instead of `/`).
 - `/image`, `/video`, `/audio`, `/file` open the system file dialog (or a
   built-in browser) and copy the file into the note's `assets/` folder.

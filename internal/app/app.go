@@ -405,6 +405,7 @@ func (m *Model) renamePage(id, title string) {
 	m.sidebar.SetSelectedID(updated.ID)
 	if b := m.activeBuffer(); b != nil && m.active != activeBefore {
 		m.content.SetBuffer(b.page(), false)
+		m.preview.SetBaseDir(m.noteDir(b))
 		m.preview.SetPage(b.page())
 		m.sidebar.SetActiveID(b.id)
 	}

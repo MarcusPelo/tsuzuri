@@ -22,6 +22,7 @@ type Model struct {
 	pageID     string
 	title      string
 	rawContent string
+	baseDir    string
 	focused    bool
 	ready      bool
 }
@@ -72,6 +73,14 @@ func (m *Model) SetPage(p core.Page) {
 	m.SetContent(p.Content)
 }
 
+// SetBaseDir sets the folder the note lives in (for relative image paths).
+func (m *Model) SetBaseDir(dir string) {
+	if dir != m.baseDir {
+		m.baseDir = dir
+		m.recompile()
+	}
+}
+
 // SetTheme switches colours and re-renders.
 func (m *Model) SetTheme(th theme.Theme) {
 	m.theme = th
@@ -103,7 +112,7 @@ func (m *Model) recompile() {
 	if vpWidth <= 0 {
 		vpWidth = m.width - 2
 	}
-	compiled := Compile(m.rawContent, m.theme, vpWidth)
+	compiled := CompileIn(m.rawContent, m.theme, vpWidth, m.baseDir)
 	m.viewport.SetContent(compiled)
 }
 

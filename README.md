@@ -29,7 +29,7 @@
 - **Edits are never lost by accident.** Unsaved changes survive tab switches, closing a dirty tab asks *Save / Don't Save / Cancel*, quitting offers *Save All*, and deleting a file asks first.
 - **Vim editing.** `NORMAL`, `INSERT` and `COMMAND` modes with motions (`hjkl`, `w`/`b`, `0`/`$`, `gg`/`G`, `Ctrl+D`/`Ctrl+U`), `x`, `dd`, `o`/`O`, and `:w`, `:w name`, `:wq`, `:q!`, `:bd`, `:enew`.
 - **Mouse everywhere.** Click tabs, close buttons, the `+` button, tree rows and the editor (places the cursor). The wheel scrolls whichever pane is under the pointer.
-- **Live preview.** Headings, checklists, callouts, code blocks and tables render as you type. Toggle it with `Space p`.
+- **Live preview.** Headings, checklists, callouts, tables and code blocks render as you type. Code is syntax-highlighted for 250+ languages (also in the editor), and local images (PNG, JPEG, GIF, WebP, BMP) are drawn right in the terminal. Toggle it with `Space p`.
 - **96 NvChad themes.** Every base46 theme (onedark, catppuccin, gruvbox, tokyonight, rosepine, nord, everforest, kanagawa, the light ones …). `Space t` opens a picker that previews as you move; the choice is remembered.
 - **Notion-style `/` menu.** In INSERT mode, type `/` at the start of a line (or after a space) to insert headings, lists, to-dos, toggles, callouts, quotes, tables, dividers, code, a new sub-page or a link to another note. Keep typing to filter.
 - **Attach images and files.** `/image`, `/video`, `/audio` and `/file` open your system's file dialog (Finder on macOS, zenity/kdialog on Linux, the Windows file picker). The file is copied into an `assets/` folder next to the note and linked. Over SSH or without a desktop, a built-in browser opens instead (set `TSUZURI_NATIVE_PICKER=0` to always use it).
@@ -233,6 +233,7 @@ git push origin v0.1.0
 ## Credits
 
 - Colour themes are generated from [NvChad base46](https://github.com/NvChad/base46) (MIT).
+- Syntax highlighting by [chroma](https://github.com/alecthomas/chroma) (MIT); image decoding by [golang.org/x/image](https://pkg.go.dev/golang.org/x/image) (BSD-3-Clause).
 - `internal/textarea` is adapted from [charmbracelet/bubbles](https://github.com/charmbracelet/bubbles) (MIT).
 
 ## License
