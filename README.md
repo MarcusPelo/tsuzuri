@@ -97,7 +97,7 @@ notes/
     └── 2025.md
 ```
 
-Only `.md` files are shown and written. Renaming a note also renames its sub-note folder. Deleting a note also deletes its sub-notes; Tsuzuri asks before deleting anything.
+Only `.md` files are shown and written, and folders appear in the explorer only when they contain a note somewhere inside. Renaming a note also renames its sub-note folder. Deleting a note also deletes its sub-notes; Tsuzuri asks before deleting anything.
 
 ## Keybindings
 

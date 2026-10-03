@@ -83,6 +83,7 @@ func fileExists(abs string) bool {
 // List walks the workspace directory tree and returns a flattened list of
 // pages and folders, each carrying its real ParentID so callers can rebuild
 // the hierarchy. Folders are ordered before files, both alphabetically.
+// Folders with no Markdown file anywhere inside them are left out.
 func (s *Store) List() []Page {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -92,12 +93,15 @@ func (s *Store) List() []Page {
 	return pages
 }
 
-func (s *Store) walk(relDir, parentID string, out *[]Page) {
+// walk appends relDir's notes and folders to out and reports whether it
+// found any Markdown file in the subtree.
+func (s *Store) walk(relDir, parentID string, out *[]Page) bool {
 	absDir := filepath.Join(s.root, filepath.FromSlash(relDir))
 	entries, err := os.ReadDir(absDir)
 	if err != nil {
-		return
+		return false
 	}
+	found := false
 
 	mdBases := map[string]bool{}
 	dirBases := map[string]bool{}
@@ -147,16 +151,22 @@ func (s *Store) walk(relDir, parentID string, out *[]Page) {
 				UpdatedAt: modTime(filepath.Join(s.root, filepath.FromSlash(relFile))),
 			})
 			s.walk(relChild, id, out)
+			found = true
 		} else {
 			id := relChild
-			*out = append(*out, Page{
+			folder := Page{
 				ID:        id,
 				Title:     base,
 				ParentID:  parentID,
 				IsFolder:  true,
 				UpdatedAt: modTime(filepath.Join(s.root, filepath.FromSlash(relChild))),
-			})
-			s.walk(relChild, id, out)
+			}
+			var children []Page
+			if s.walk(relChild, id, &children) {
+				*out = append(*out, folder)
+				*out = append(*out, children...)
+				found = true
+			}
 		}
 	}
 
@@ -168,7 +178,9 @@ func (s *Store) walk(relDir, parentID string, out *[]Page) {
 			ParentID:  parentID,
 			UpdatedAt: modTime(filepath.Join(s.root, filepath.FromSlash(relFile))),
 		})
+		found = true
 	}
+	return found
 }
 
 func modTime(abs string) time.Time {

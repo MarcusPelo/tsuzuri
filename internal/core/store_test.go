@@ -228,20 +228,20 @@ func TestStoreListReflectsRealDirectoryOrdering(t *testing.T) {
 	if _, err := store.Create("Apple", ""); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if err := os.MkdirAll(filepath.Join(store.Root(), "Middle Folder"), 0755); err != nil {
+	if _, err := store.SaveAs("Middle Folder", "inside", ""); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
 	pages := store.List()
-	if len(pages) != 3 {
+	if len(pages) != 4 {
 		t.Fatalf("expected 3 entries, got %d: %v", len(pages), pages)
 	}
 	// Folders sort before files; both groups are alphabetical.
 	if pages[0].Title != "Middle Folder" || !pages[0].IsFolder {
 		t.Errorf("expected folder first, got %v", pages[0])
 	}
-	if pages[1].Title != "Apple" || pages[2].Title != "Zebra" {
-		t.Errorf("expected files alphabetically after folders, got %v, %v", pages[1], pages[2])
+	if pages[2].Title != "Apple" || pages[3].Title != "Zebra" {
+		t.Errorf("expected files alphabetically after folders, got %v, %v", pages[2], pages[3])
 	}
 }
 
@@ -316,5 +316,29 @@ func TestRenameKeepsContent(t *testing.T) {
 	got, err := s.Get(renamed.ID)
 	if err != nil || got.Content != "keep me" || renamed.ID != "new.md" {
 		t.Fatalf("after rename got %+v (id %q), err %v", got, renamed.ID, err)
+	}
+}
+
+func TestListHidesFoldersWithoutMarkdown(t *testing.T) {
+	s := newTestStore(t)
+	root := s.Root()
+	for _, d := range []string{"bin", "cmd/tsuzuri", "docs/guides/deep", "empty"} {
+		if err := os.MkdirAll(filepath.Join(root, d), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(root, "cmd/tsuzuri/main.go"), []byte("package main"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.SaveAs("docs/guides/deep", "howto", "x"); err != nil {
+		t.Fatal(err)
+	}
+	var ids []string
+	for _, p := range s.List() {
+		ids = append(ids, p.ID)
+	}
+	got := strings.Join(ids, ",")
+	if got != "docs,docs/guides,docs/guides/deep,docs/guides/deep/howto.md" {
+		t.Fatalf("expected only folders leading to notes, got %s", got)
 	}
 }
