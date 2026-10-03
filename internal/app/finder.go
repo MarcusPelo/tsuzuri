@@ -2,9 +2,11 @@ package app
 
 import (
 	"fmt"
+	"path/filepath"
 	"sort"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/jaisuriya-11/tsuzuri/internal/core"
 	"github.com/jaisuriya-11/tsuzuri/internal/theme"
@@ -16,27 +18,34 @@ import (
 )
 
 // finder is the global, Telescope-style note picker. It searches every
-// Markdown note in the workspace (the directory Tsuzuri was opened in).
+// Markdown note under the workspace root, recursively: file names (fuzzy)
+// first, then the text inside the notes (like live grep).
 type finder struct {
 	input   textinput.Model
+	root    string
 	notes   []core.Page
 	matches []finderMatch
 	sel     int
 	offset  int
-	preview map[string][]string
+	lines   map[string][]string // note text, split into lines
 }
+
+// maxTextHits caps text matches so huge workspaces stay responsive.
+const maxTextHits = 500
 
 type finderMatch struct {
 	page  core.Page
 	score int
-	pos   []int // matched byte offsets into page.ID
+	pos   []int // matched byte offsets into page.ID (name) or text (line hit)
+	line  int   // 1-based line of a text hit; 0 for a file-name match
+	text  string
 }
 
 func (m *Model) openFinder() tea.Cmd {
 	th := m.theme
 	in := textinput.New()
 	in.Prompt = ""
-	in.Placeholder = "Search notes by name or folder…"
+	in.Placeholder = "Search file names and text in every note…"
 	in.CharLimit = 120
 	field := lipgloss.NewStyle().Background(th.Bg2)
 	in.TextStyle = field.Foreground(th.Fg)
@@ -50,7 +59,12 @@ func (m *Model) openFinder() tea.Cmd {
 			notes = append(notes, p)
 		}
 	}
-	f := &finder{input: in, notes: notes, preview: map[string][]string{}}
+	f := &finder{input: in, root: filepath.Base(m.store.Root()), notes: notes, lines: map[string][]string{}}
+	for _, p := range notes {
+		if full, err := m.store.Get(p.ID); err == nil {
+			f.lines[p.ID] = strings.Split(strings.ReplaceAll(full.Content, "\t", "    "), "\n")
+		}
+	}
 	f.refilter()
 	m.finder = f
 	m.leaderPending = false
@@ -117,6 +131,33 @@ func (f *finder) refilter() {
 		}
 		return f.matches[i].page.UpdatedAt.After(f.matches[j].page.UpdatedAt)
 	})
+
+	// Text inside notes (case-insensitive), in path order, after name hits.
+	if needle := strings.ToLower(q); len([]rune(needle)) >= 2 {
+		byPath := append([]core.Page(nil), f.notes...)
+		sort.Slice(byPath, func(i, j int) bool { return byPath[i].ID < byPath[j].ID })
+		hits := 0
+	scan:
+		for _, p := range byPath {
+			for n, l := range f.lines[p.ID] {
+				lower := strings.ToLower(l)
+				idx := strings.Index(lower, needle)
+				if idx < 0 || len(lower) != len(l) {
+					continue
+				}
+				trimmed := strings.TrimLeft(l, " ")
+				shift := len(l) - len(trimmed)
+				var pos []int
+				for k := idx; k < idx+len(needle); k++ {
+					pos = append(pos, k-shift)
+				}
+				f.matches = append(f.matches, finderMatch{page: p, pos: pos, line: n + 1, text: trimmed})
+				if hits++; hits >= maxTextHits {
+					break scan
+				}
+			}
+		}
+	}
 	f.sel, f.offset = 0, 0
 }
 
@@ -175,11 +216,18 @@ func (m *Model) finderOpen(f *finder, newTab bool) tea.Cmd {
 	if !ok {
 		return nil
 	}
+	line := f.matches[f.sel].line
 	m.finder = nil
+	var cmd tea.Cmd
 	if newTab {
-		return m.openFile(p.ID)
+		cmd = m.openFile(p.ID)
+	} else {
+		cmd = m.openInCurrentBuffer(p.ID)
 	}
-	return m.openInCurrentBuffer(p.ID)
+	if line > 0 && m.active == p.ID {
+		m.content.GotoLine(line)
+	}
+	return cmd
 }
 
 func (f *finder) update(m *Model, msg tea.Msg) tea.Cmd {
@@ -252,22 +300,6 @@ func (f *finder) update(m *Model, msg tea.Msg) tea.Cmd {
 	}
 }
 
-func (f *finder) previewLines(m *Model, id string) []string {
-	if lines, ok := f.preview[id]; ok {
-		return lines
-	}
-	p, err := m.store.Get(id)
-	var lines []string
-	if err == nil {
-		lines = strings.Split(strings.ReplaceAll(p.Content, "\t", "    "), "\n")
-		if len(lines) > 200 {
-			lines = lines[:200]
-		}
-	}
-	f.preview[id] = lines
-	return lines
-}
-
 func (f *finder) view(m *Model) (string, int, int) {
 	th := m.theme
 	g := finderLayout(m.width, m.height)
@@ -278,7 +310,7 @@ func (f *finder) view(m *Model) (string, int, int) {
 	rows := make([]string, 0, g.innerHeight)
 
 	// Title + count.
-	title := bg.Foreground(th.Blue).Render(" 󰍉 ") + bg.Foreground(th.Fg).Bold(true).Render("Find Note")
+	title := bg.Foreground(th.Blue).Render(" 󰍉 ") + bg.Foreground(th.Fg).Bold(true).Render("Find Note") + bg.Foreground(th.GreyFg2).Render("  in "+f.root+"/")
 	count := bg.Foreground(th.GreyFg2).Render(fmt.Sprintf("%d / %d ", len(f.matches), len(f.notes)))
 	rows = append(rows, title+bg.Render(strings.Repeat(" ", max(inner-lipgloss.Width(title)-lipgloss.Width(count), 0)))+count)
 
@@ -291,9 +323,14 @@ func (f *finder) view(m *Model) (string, int, int) {
 	// Results and preview side by side.
 	var prevLines []string
 	var prevTitle string
+	prevStart, hitLine := 0, 0
 	if p, ok := f.selected(); ok && g.previewW > 0 {
-		prevLines = f.previewLines(m, p.ID)
+		prevLines = f.lines[p.ID]
 		prevTitle = p.ID
+		if hitLine = f.matches[f.sel].line; hitLine > 0 {
+			prevTitle = fmt.Sprintf("%s:%d", p.ID, hitLine)
+			prevStart = max(hitLine-1-(g.listRows-1)/3, 0)
+		}
 	}
 	sep := bg.Foreground(th.Line).Render("│")
 	for r := 0; r < g.listRows; r++ {
@@ -309,13 +346,17 @@ func (f *finder) view(m *Model) (string, int, int) {
 		switch {
 		case r == 0 && prevTitle != "":
 			right = bg.Foreground(th.Yellow).Render(" 󰈈 ") + bg.Foreground(th.GreyFg2).Render(ui.Truncate(prevTitle, g.previewW-5))
-		case r >= 1 && r-1 < len(prevLines):
-			right = previewLine(th, prevLines[r-1], g.previewW)
+		case r >= 1 && prevStart+r-1 < len(prevLines):
+			n := prevStart + r - 1
+			right = previewLine(th, prevLines[n], g.previewW)
+			if n+1 == hitLine {
+				right = ui.FitLine(lipgloss.NewStyle().Background(th.OneBg2).Foreground(th.Fg).Render(" "+ui.Truncate(prevLines[n], g.previewW-2)), g.previewW, lipgloss.NewStyle().Background(th.OneBg2))
+			}
 		}
 		rows = append(rows, left+sep+ui.FitLine(right, g.previewW, bg))
 	}
 
-	help := "↑↓ move · Enter open here · Ctrl+T new tab · Esc close"
+	help := "↑↓ move · Enter open here (jumps to the line) · Ctrl+T new tab · Esc close"
 	rows = append(rows, bg.Foreground(th.GreyFg).Render(" "+ui.Truncate(help, inner-2)))
 	return panel(th, rows, inner), g.x, g.y
 }
@@ -339,6 +380,10 @@ func (f *finder) resultRow(th theme.Theme, idx, width int) string {
 		marker = base.Foreground(th.Blue).Render("▌ ")
 	}
 	icon := base.Foreground(th.NordBlue).Render(" ")
+
+	if mt.line > 0 {
+		return f.textRow(th, mt, base, hit, marker, width)
+	}
 
 	id := mt.page.ID
 	nameStart := strings.LastIndex(id, "/") + 1
@@ -415,4 +460,42 @@ func (m *Model) openInCurrentBuffer(id string) tea.Cmd {
 	m.showBuffer(cur)
 	m.refreshModified()
 	return m.focusPane(focusEditor)
+}
+
+// textRow renders a text hit: "path:line  …matched text…".
+func (f *finder) textRow(th theme.Theme, mt finderMatch, base, hit lipgloss.Style, marker string, width int) string {
+	loc := base.Foreground(th.GreyFg2).Render(fmt.Sprintf("%s:%d", mt.page.ID, mt.line))
+	icon := base.Foreground(th.Yellow).Render("\uf002 ")
+	head := marker + icon + loc + base.Render("  ")
+	room := width - lipgloss.Width(head)
+
+	text := mt.text
+	start := 0
+	if len(mt.pos) > 0 && mt.pos[0] > room/2 {
+		start = mt.pos[0] - room/3 // keep the match visible on long lines
+		for start > 0 && !utf8.RuneStart(text[start]) {
+			start--
+		}
+	}
+	matched := map[int]bool{}
+	for _, p := range mt.pos {
+		matched[p] = true
+	}
+	var b strings.Builder
+	if start > 0 {
+		b.WriteString(base.Foreground(th.GreyFg).Render("…"))
+	}
+	normal := base.Foreground(th.Fg)
+	for i, r := range text[start:] {
+		st := normal
+		if matched[start+i] {
+			st = hit
+		}
+		b.WriteString(st.Render(string(r)))
+	}
+	line := head + b.String()
+	if lipgloss.Width(line) > width {
+		line = ui.FitLine(line, width-1, base) + base.Foreground(th.GreyFg).Render("…")
+	}
+	return ui.FitLine(line, width, base)
 }

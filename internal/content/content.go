@@ -180,6 +180,9 @@ func (m *Model) enterInsert() tea.Cmd {
 
 func (m *Model) halfPage() int { return max(m.textarea.Height()/2, 1) }
 
+// GotoLine puts the cursor on 1-based line n, scrolled into view.
+func (m *Model) GotoLine(n int) { m.textarea.GotoLine(n) }
+
 // ScrollBy scrolls the text by n lines, even while the pane is unfocused.
 func (m *Model) ScrollBy(n int) { m.textarea.ScrollBy(n) }
 

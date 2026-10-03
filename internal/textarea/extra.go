@@ -111,6 +111,13 @@ func (m *Model) MoveCursorBy(n int) {
 	m.EnsureVisible()
 }
 
+// GotoLine moves the cursor to the start of 1-based line n.
+func (m *Model) GotoLine(n int) {
+	m.row = clamp(n-1, 0, len(m.value)-1)
+	m.SetCursor(0)
+	m.EnsureVisible()
+}
+
 // CharLeft / CharRight move the cursor one character within the line.
 func (m *Model) CharLeft() {
 	if m.col > 0 {

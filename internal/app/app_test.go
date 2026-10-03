@@ -507,3 +507,26 @@ func TestEveryThemeRendersFullFrames(t *testing.T) {
 		h.view()
 	}
 }
+
+func TestFinderSearchesTextAcrossAllFolders(t *testing.T) {
+	store := newTestStore(t)
+	body := "# Trip\n\nline two\npack the passport\n"
+	if _, err := store.SaveAs("travel/2026/japan", "itinerary", body); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.SaveAs("", "inbox", "nothing here"); err != nil {
+		t.Fatal(err)
+	}
+	h := newHarness(t, store)
+	h.keys("f")
+	h.keys("passport")
+	v := h.view()
+	if !strings.Contains(v, "travel/2026/japan/itinerary.md:4") {
+		t.Fatalf("expected a text hit with path and line from a nested folder:\n%s", v)
+	}
+	h.key(tea.KeyEnter)
+	v = h.view()
+	if !strings.Contains(strings.Split(v, "\n")[0], "itinerary.md") || !strings.Contains(v, "Ln 4, Col 1") {
+		t.Fatalf("expected itinerary.md open with the cursor on line 4:\n%s", v)
+	}
+}

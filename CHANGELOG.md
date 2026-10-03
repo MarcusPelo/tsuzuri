@@ -11,8 +11,8 @@ All notable changes to this project are documented here. The format follows
   screen, `:colorscheme`), `--theme` / `--list-themes` flags, and the choice
   saved in the user config file. The whole screen is painted with the theme,
   so light themes work on dark terminals.
-- Global Telescope-style finder (`Ctrl+P`, `f` on home) with fuzzy matching
-  and preview; opens in the current tab unless it has unsaved changes.
+- Global Telescope-style finder (`Ctrl+P`, `f` on home) searching file names
+  (fuzzy) and note text across every folder from the root, with preview; opens in the current tab unless it has unsaved changes.
 - NvChad onedark look: nvdash start screen, nvim-tree explorer with indent
   guides, buffer tabline, statusline with mode, file, folder, words and cursor.
 - Save As dialog for new notes: choose a folder from a list (or type a new
