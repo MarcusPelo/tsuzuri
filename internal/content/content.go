@@ -4,8 +4,8 @@ package content
 import (
 	"strings"
 
-	"tsuzuri/internal/core"
-	"tsuzuri/internal/theme"
+	"github.com/jaisuriya-11/tsuzuri/internal/core"
+	"github.com/jaisuriya-11/tsuzuri/internal/theme"
 
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/textinput"
@@ -214,7 +214,31 @@ func (m Model) View() string {
 
 	m.SetSize(m.width, m.height)
 
-	// Build NvChad-style tabufline across the top of the editor (NO x close buttons)
+	border := m.theme.Border
+	if m.focused {
+		border = m.theme.BorderFocus
+	}
+
+	if m.page.ID == "" {
+		msg := lipgloss.NewStyle().
+			Italic(true).
+			Foreground(m.theme.MutedFg).
+			Render(" No page open — press n to create one")
+		placeholder := lipgloss.Place(m.width-2, m.height, lipgloss.Center, lipgloss.Center, msg)
+		return lipgloss.NewStyle().
+			Width(m.width-1).
+			Height(m.height).
+			MaxHeight(m.height).
+			BorderStyle(lipgloss.NormalBorder()).
+			BorderRight(true).
+			BorderForeground(border).
+			Padding(0, 1).
+			Render(placeholder)
+	}
+
+	// Build a VSCode-style tab strip across the top of the editor: only pages
+	// the user actually opened appear here, each with a close affordance
+	// ('x' closes the active tab, VSCode-style) and a dirty dot when unsaved.
 	var tabs []string
 	pagesToRender := m.pages
 	if len(pagesToRender) == 0 && m.page.ID != "" {
@@ -243,8 +267,8 @@ func (m Model) View() string {
 		if tabTitle == "" {
 			tabTitle = "Untitled"
 		}
-		if !strings.HasSuffix(tabTitle, ".md") {
-			tabTitle = tabTitle + ".md"
+		if strings.HasSuffix(p.ID, ".md") {
+			tabTitle += ".md"
 		}
 
 		var tabStr string
@@ -253,9 +277,9 @@ func (m Model) View() string {
 			if m.textarea.Value() != m.page.Content {
 				dirty = " ●"
 			}
-			tabStr = tabActiveStyle.Render(" " + tabTitle + dirty)
+			tabStr = tabActiveStyle.Render(" " + tabTitle + dirty + "  ")
 		} else {
-			tabStr = tabInactiveStyle.Render(" " + tabTitle)
+			tabStr = tabInactiveStyle.Render(" " + tabTitle + "  ")
 		}
 
 		tabW := lipgloss.Width(tabStr)
@@ -274,8 +298,8 @@ func (m Model) View() string {
 		if title == "" {
 			title = "Untitled"
 		}
-		if !strings.HasSuffix(title, ".md") {
-			title = title + ".md"
+		if strings.HasSuffix(m.page.ID, ".md") {
+			title += ".md"
 		}
 		titleView = tabActiveStyle.Render(" " + title)
 	}
@@ -290,11 +314,6 @@ func (m Model) View() string {
 		inner = lipgloss.JoinVertical(lipgloss.Left, titleView, editorView, statusMsg)
 	} else {
 		inner = lipgloss.JoinVertical(lipgloss.Left, titleView, editorView)
-	}
-
-	border := m.theme.Border
-	if m.focused {
-		border = m.theme.BorderFocus
 	}
 
 	return lipgloss.NewStyle().

@@ -3,7 +3,7 @@ package app
 import (
 	"strings"
 
-	"tsuzuri/internal/theme"
+	"github.com/jaisuriya-11/tsuzuri/internal/theme"
 
 	"github.com/charmbracelet/lipgloss"
 )
@@ -35,21 +35,27 @@ func RenderKeymapModal(th theme.Theme, termWidth, termHeight int) string {
 	var b strings.Builder
 
 	// Header
-	b.WriteString(lipgloss.NewStyle().Align(lipgloss.Center).Width(modalWidth-4).Render(titleStyle.Render("󰌌  TSUZURI SHORTCUTS CHEATSHEET")) + "\n\n")
+	b.WriteString(lipgloss.NewStyle().Align(lipgloss.Center).Width(modalWidth-4).Render(titleStyle.Render("  TSUZURI SHORTCUTS CHEATSHEET")) + "\n\n")
 
 	// Section 1: Navigation & Layout
 	b.WriteString(catHeaderStyle.Render("󰕭 NAVIGATION & LAYOUT") + "\n")
 	b.WriteString(fmtShortcut("Tab", "Cycle Focus (Sidebar → Editor → Preview)", keyStyle, descStyle) + "\n")
 	b.WriteString(fmtShortcut("Ctrl+B", "Toggle Sidebar (Show / Hide)", keyStyle, descStyle) + "\n")
 	b.WriteString(fmtShortcut("Ctrl+D", "Return to NvChad Landing Page", keyStyle, descStyle) + "\n")
-	b.WriteString(fmtShortcut("SPC h", "Open this Shortcuts Modal", keyStyle, descStyle) + "\n")
+	b.WriteString(fmtShortcut("Ctrl+N", "New page (unsaved until :w)", keyStyle, descStyle) + "\n")
+	b.WriteString(fmtShortcut("[ / ]", "Previous / next buffer tab", keyStyle, descStyle) + "\n")
+	b.WriteString(fmtShortcut("x", "Close active tab (editor NORMAL mode)", keyStyle, descStyle) + "\n")
+	b.WriteString(fmtShortcut("SPC h / ?", "Open this Shortcuts Modal", keyStyle, descStyle) + "\n")
 	b.WriteString(fmtShortcut("Ctrl+C", "Quit Application", keyStyle, descStyle) + "\n\n")
 
 	// Section 2: Notion Sidebar & Nested Tree
 	b.WriteString(catHeaderStyle.Render("󰉋 NOTION SIDEBAR & TREE") + "\n")
 	b.WriteString(fmtShortcut("j / k", "Navigate items up / down", keyStyle, descStyle) + "\n")
-	b.WriteString(fmtShortcut("Enter / r / e", "Inline edit / rename selected document", keyStyle, descStyle) + "\n")
-	b.WriteString(fmtShortcut("z / Space", "Expand / Collapse folder", keyStyle, descStyle) + "\n")
+	b.WriteString(fmtShortcut("Enter / l", "Open page / expand folder", keyStyle, descStyle) + "\n")
+	b.WriteString(fmtShortcut("o", "Open page that has sub-pages", keyStyle, descStyle) + "\n")
+	b.WriteString(fmtShortcut("h", "Collapse folder", keyStyle, descStyle) + "\n")
+	b.WriteString(fmtShortcut("z / Space", "Toggle expand / collapse", keyStyle, descStyle) + "\n")
+	b.WriteString(fmtShortcut("r / e", "Rename selected document", keyStyle, descStyle) + "\n")
 	b.WriteString(fmtShortcut("n", "New top-level document", keyStyle, descStyle) + "\n")
 	b.WriteString(fmtShortcut("a", "New nested sub-page under current doc", keyStyle, descStyle) + "\n")
 	b.WriteString(fmtShortcut("d / x", "Delete document", keyStyle, descStyle) + "\n")
@@ -60,12 +66,13 @@ func RenderKeymapModal(th theme.Theme, termWidth, termHeight int) string {
 	b.WriteString(fmtShortcut("i / a", "Enter INSERT mode (compiles live on typing)", keyStyle, descStyle) + "\n")
 	b.WriteString(fmtShortcut("Esc", "Return to NORMAL mode", keyStyle, descStyle) + "\n")
 	b.WriteString(fmtShortcut(":w", "Save document", keyStyle, descStyle) + "\n")
-	b.WriteString(fmtShortcut(":wq", "Save and quit application", keyStyle, descStyle) + "\n\n")
+	b.WriteString(fmtShortcut(":wq / :x", "Save and quit application", keyStyle, descStyle) + "\n")
+	b.WriteString(fmtShortcut(":q / :q!", "Quit (discard unsaved changes)", keyStyle, descStyle) + "\n\n")
 
 	// Section 4: Live Compiled Preview
 	b.WriteString(catHeaderStyle.Render("󰈈 LIVE COMPILED PREVIEW") + "\n")
 	b.WriteString(fmtShortcut("j / k", "Scroll preview line up / down", keyStyle, descStyle) + "\n")
-	b.WriteString(fmtShortcut("d / u", "Half-page scroll down / up", keyStyle, descStyle) + "\n")
+	b.WriteString(fmtShortcut("d / u", "Half-page down / up (also Ctrl+D / Ctrl+U)", keyStyle, descStyle) + "\n")
 	b.WriteString(fmtShortcut("g / G", "Jump to top / bottom", keyStyle, descStyle) + "\n\n")
 
 	// Footer dismissal hint
@@ -74,7 +81,7 @@ func RenderKeymapModal(th theme.Theme, termWidth, termHeight int) string {
 		Foreground(th.MutedFg).
 		Align(lipgloss.Center).
 		Width(modalWidth - 4)
-	b.WriteString(dismissStyle.Render("Esc / q / Space to dismiss"))
+	b.WriteString(dismissStyle.Render("Esc / q / Space / Enter to dismiss"))
 
 	box := lipgloss.NewStyle().
 		Width(modalWidth).

@@ -5,7 +5,7 @@ import (
 	"regexp"
 	"strings"
 
-	"tsuzuri/internal/theme"
+	"github.com/jaisuriya-11/tsuzuri/internal/theme"
 
 	"github.com/charmbracelet/lipgloss"
 )

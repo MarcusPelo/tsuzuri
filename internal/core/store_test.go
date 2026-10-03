@@ -1,11 +1,21 @@
 package core_test
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 
-	"tsuzuri/internal/core"
+	"github.com/jaisuriya-11/tsuzuri/internal/core"
 )
+
+func newTestStore(t *testing.T) *core.Store {
+	t.Helper()
+	store, err := core.NewStore(t.TempDir())
+	if err != nil {
+		t.Fatalf("unexpected error creating store: %v", err)
+	}
+	return store
+}
 
 func TestStoreCreate(t *testing.T) {
 	tests := []struct {
@@ -13,27 +23,15 @@ func TestStoreCreate(t *testing.T) {
 		inputTitle    string
 		expectedTitle string
 	}{
-		{
-			name:          "Create with empty title generates default title",
-			inputTitle:    "",
-			expectedTitle: "Untitled 2",
-		},
-		{
-			name:          "Create with custom title",
-			inputTitle:    "Meeting Notes",
-			expectedTitle: "Meeting Notes",
-		},
-		{
-			name:          "Create with special characters",
-			inputTitle:    "🔑 Credentials & Keys",
-			expectedTitle: "🔑 Credentials & Keys",
-		},
+		{name: "Create with empty title generates default title", inputTitle: "", expectedTitle: "Untitled"},
+		{name: "Create with custom title", inputTitle: "Meeting Notes", expectedTitle: "Meeting Notes"},
+		{name: "Create with special characters", inputTitle: "🔑 Credentials & Keys", expectedTitle: "🔑 Credentials & Keys"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			store := core.NewStore()
-			p, err := store.Create(tt.inputTitle)
+			store := newTestStore(t)
+			p, err := store.Create(tt.inputTitle, "")
 			if err != nil {
 				t.Fatalf("unexpected error creating page: %v", err)
 			}
@@ -43,150 +41,216 @@ func TestStoreCreate(t *testing.T) {
 			if p.ID == "" {
 				t.Error("expected non-empty page ID")
 			}
+			if _, err := os.Stat(filepath.Join(store.Root(), filepath.FromSlash(p.ID))); err != nil {
+				t.Errorf("expected a real file on disk at %q: %v", p.ID, err)
+			}
 		})
 	}
 }
 
+func TestStoreCreateDuplicateTitlesAreDisambiguated(t *testing.T) {
+	store := newTestStore(t)
+
+	first, err := store.Create("", "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	second, err := store.Create("", "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if first.Title != "Untitled" {
+		t.Errorf("expected first page title 'Untitled', got %q", first.Title)
+	}
+	if second.Title != "Untitled 2" {
+		t.Errorf("expected second page title 'Untitled 2', got %q", second.Title)
+	}
+}
+
 func TestStoreCreateChild(t *testing.T) {
-	store := core.NewStore()
-	child, err := store.CreateChild("page-1", "Nested Tasks")
+	store := newTestStore(t)
+
+	parent, err := store.Create("Parent 1", "")
+	if err != nil {
+		t.Fatalf("unexpected error creating parent page: %v", err)
+	}
+
+	child, err := store.Create("Nested Tasks", parent.ID)
 	if err != nil {
 		t.Fatalf("unexpected error creating child page: %v", err)
 	}
-	if child.ParentID != "page-1" {
-		t.Errorf("expected parent ID 'page-1', got %q", child.ParentID)
+	if child.ParentID != parent.ID {
+		t.Errorf("expected parent ID %q, got %q", parent.ID, child.ParentID)
 	}
 	if child.Title != "Nested Tasks" {
 		t.Errorf("expected title 'Nested Tasks', got %q", child.Title)
 	}
 
-	_, err = store.CreateChild("non-existent", "Child")
+	// The sidecar folder should exist alongside the parent file.
+	sidecar := filepath.Join(store.Root(), "Parent 1")
+	if info, err := os.Stat(sidecar); err != nil || !info.IsDir() {
+		t.Errorf("expected sidecar folder %q to exist", sidecar)
+	}
+
+	_, err = store.Create("Child", "non-existent.md")
 	if err != core.ErrPageNotFound {
 		t.Errorf("expected ErrPageNotFound for non-existent parent, got %v", err)
 	}
 }
 
-func TestStoreSaveLoadRoundTrip(t *testing.T) {
-	tests := []struct {
-		name  string
-		pages []core.Page
-	}{
-		{
-			name: "Round-trip single default page",
-			pages: []core.Page{
-				{ID: "p1", Title: "Initial Doc", Content: "Hello world"},
-			},
-		},
-		{
-			name: "Round-trip multiple complex pages",
-			pages: []core.Page{
-				{ID: "p1", Title: "Page 1", Content: "# Header\nSome markdown text"},
-				{ID: "p2", Title: "Page 2", Content: "```go\nfmt.Println(\"hi\")\n```"},
-				{ID: "p3", Title: "Page 3", Content: "Final page"},
-			},
-		},
+func TestStorePlainFoldersAreNavigable(t *testing.T) {
+	store := newTestStore(t)
+
+	if err := os.MkdirAll(filepath.Join(store.Root(), "assets"), 0755); err != nil {
+		t.Fatalf("failed to seed plain folder: %v", err)
+	}
+	page, err := store.Create("notes", "assets")
+	if err != nil {
+		t.Fatalf("unexpected error creating page inside plain folder: %v", err)
+	}
+	if page.ParentID != "assets" {
+		t.Errorf("expected parent ID 'assets', got %q", page.ParentID)
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			tmpDir := t.TempDir()
-			filePath := filepath.Join(tmpDir, "workspace.json")
+	pages := store.List()
+	var folder core.Page
+	found := false
+	for _, p := range pages {
+		if p.ID == "assets" {
+			folder = p
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected 'assets' folder in List(), got %v", pages)
+	}
+	if !folder.IsFolder {
+		t.Errorf("expected 'assets' to be marked IsFolder, got %v", folder)
+	}
+}
 
-			store1 := core.NewStore()
-			pagesInStore := store1.List()
-			for _, p := range pagesInStore {
-				_ = store1.Delete(p.ID)
-			}
+func TestStoreUpdateRenamesFileAndSidecarFolder(t *testing.T) {
+	store := newTestStore(t)
 
-			for _, p := range tt.pages {
-				created, err := store1.Create(p.Title)
-				if err != nil {
-					t.Fatalf("failed to create test page: %v", err)
-				}
-				created.Content = p.Content
-				if err := store1.Update(created); err != nil {
-					t.Fatalf("failed to update test page: %v", err)
-				}
-			}
+	parent, err := store.Create("Parent 1", "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if _, err := store.Create("child 1", parent.ID); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
-			if err := store1.SaveToFile(filePath); err != nil {
-				t.Fatalf("SaveToFile failed: %v", err)
-			}
+	parent.Title = "Renamed Parent"
+	parent.Content = "# Renamed Parent"
+	updated, err := store.Update(parent)
+	if err != nil {
+		t.Fatalf("unexpected error updating parent: %v", err)
+	}
+	if updated.ID != "Renamed Parent.md" {
+		t.Errorf("expected renamed ID 'Renamed Parent.md', got %q", updated.ID)
+	}
 
-			store2 := core.NewStore()
-			if err := store2.LoadFromFile(filePath); err != nil {
-				t.Fatalf("LoadFromFile failed: %v", err)
-			}
+	// The sidecar folder (and the child inside it) must have moved too.
+	movedChild := filepath.Join(store.Root(), "Renamed Parent", "child 1.md")
+	if _, err := os.Stat(movedChild); err != nil {
+		t.Errorf("expected child page to move with renamed sidecar folder: %v", err)
+	}
 
-			loadedPages := store2.List()
-			if len(loadedPages) != len(tt.pages) {
-				t.Fatalf("expected %d pages loaded, got %d", len(tt.pages), len(loadedPages))
-			}
+	got, err := store.Get(updated.ID)
+	if err != nil {
+		t.Fatalf("unexpected error fetching renamed page: %v", err)
+	}
+	if got.Content != "# Renamed Parent" {
+		t.Errorf("expected content to persist through rename, got %q", got.Content)
+	}
 
-			for i, expected := range tt.pages {
-				if loadedPages[i].Title != expected.Title {
-					t.Errorf("page [%d] title mismatch: expected %q, got %q", i, expected.Title, loadedPages[i].Title)
-				}
-				if loadedPages[i].Content != expected.Content {
-					t.Errorf("page [%d] content mismatch: expected %q, got %q", i, expected.Content, loadedPages[i].Content)
-				}
+	// Sanity: the child's own ID now reflects the new parent path.
+	pages := store.List()
+	foundChild := false
+	for _, p := range pages {
+		if p.Title == "child 1" {
+			foundChild = true
+			if p.ParentID != updated.ID {
+				t.Errorf("expected child ParentID %q, got %q", updated.ID, p.ParentID)
 			}
-		})
+		}
+	}
+	if !foundChild {
+		t.Errorf("expected to find child 1 after rename, got %v", pages)
+	}
+}
+
+func TestStoreDeleteCascadesToSidecarFolder(t *testing.T) {
+	store := newTestStore(t)
+
+	parent, err := store.Create("Parent 1", "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if _, err := store.Create("child 1", parent.ID); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if err := store.Delete(parent.ID); err != nil {
+		t.Fatalf("unexpected error deleting parent: %v", err)
+	}
+
+	if pages := store.List(); len(pages) != 0 {
+		t.Errorf("expected deleting a parent to cascade to its children, got %v", pages)
+	}
+	if _, err := os.Stat(filepath.Join(store.Root(), "Parent 1")); !os.IsNotExist(err) {
+		t.Errorf("expected sidecar folder to be removed, stat err = %v", err)
 	}
 }
 
 func TestStoreEdgeCases(t *testing.T) {
-	store := core.NewStore()
+	store := newTestStore(t)
 
-	// Fetch non-existent ID
-	_, err := store.Get("non-existent-id")
-	if err != core.ErrPageNotFound {
+	if _, err := store.Get("non-existent.md"); err != core.ErrPageNotFound {
 		t.Errorf("expected ErrPageNotFound, got %v", err)
 	}
-
-	// Update non-existent page
-	err = store.Update(core.Page{ID: "invalid-id"})
-	if err != core.ErrPageNotFound {
+	if _, err := store.Update(core.Page{ID: "invalid-id.md"}); err != core.ErrPageNotFound {
 		t.Errorf("expected ErrPageNotFound on update, got %v", err)
 	}
-
-	// Delete non-existent page
-	err = store.Delete("invalid-id")
-	if err != core.ErrPageNotFound {
+	if err := store.Delete("invalid-id.md"); err != core.ErrPageNotFound {
 		t.Errorf("expected ErrPageNotFound on delete, got %v", err)
 	}
 }
 
-func TestStoreSeedHierarchy(t *testing.T) {
-	store := core.NewStore()
-	store.SeedHierarchy()
+func TestStoreListReflectsRealDirectoryOrdering(t *testing.T) {
+	store := newTestStore(t)
+
+	if _, err := store.Create("Zebra", ""); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if _, err := store.Create("Apple", ""); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(store.Root(), "Middle Folder"), 0755); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	pages := store.List()
-	// Should have initial page + 5 hierarchy pages = 6 pages
-	if len(pages) != 6 {
-		t.Fatalf("expected 6 pages after SeedHierarchy, got %d", len(pages))
+	if len(pages) != 3 {
+		t.Fatalf("expected 3 entries, got %d: %v", len(pages), pages)
 	}
-
-	pageMap := make(map[string]core.Page)
-	for _, p := range pages {
-		pageMap[p.ID] = p
+	// Folders sort before files; both groups are alphabetical.
+	if pages[0].Title != "Middle Folder" || !pages[0].IsFolder {
+		t.Errorf("expected folder first, got %v", pages[0])
 	}
-
-	// Verify child 1's parent is Parent 1
-	c1, ok := pageMap["page-child-1"]
-	if !ok || c1.ParentID != "page-parent-1" {
-		t.Errorf("expected page-child-1 to have ParentID page-parent-1, got %v", c1)
+	if pages[1].Title != "Apple" || pages[2].Title != "Zebra" {
+		t.Errorf("expected files alphabetically after folders, got %v, %v", pages[1], pages[2])
 	}
+}
 
-	// Verify grandchild's parent is child 1
-	gc1, ok := pageMap["page-child-1-child"]
-	if !ok || gc1.ParentID != "page-child-1" {
-		t.Errorf("expected page-child-1-child to have ParentID page-child-1, got %v", gc1)
+func TestNewStoreCreatesMissingWorkspaceDir(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "does-not-exist-yet")
+	store, err := core.NewStore(dir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
 	}
-
-	// Verify child 2's parent is Parent 2
-	c2, ok := pageMap["page-child-2"]
-	if !ok || c2.ParentID != "page-parent-2" {
-		t.Errorf("expected page-child-2 to have ParentID page-parent-2, got %v", c2)
+	if info, err := os.Stat(store.Root()); err != nil || !info.IsDir() {
+		t.Errorf("expected workspace directory to be created, got err=%v", err)
 	}
 }

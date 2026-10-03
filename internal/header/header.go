@@ -4,8 +4,8 @@ package header
 import (
 	"strings"
 
-	"tsuzuri/internal/core"
-	"tsuzuri/internal/theme"
+	"github.com/jaisuriya-11/tsuzuri/internal/core"
+	"github.com/jaisuriya-11/tsuzuri/internal/theme"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -95,7 +95,9 @@ func (m Model) View() string {
 	}
 
 	title := m.page.Title
-	if title == "" {
+	if m.page.ID == "" {
+		title = "No page open"
+	} else if title == "" {
 		title = "Untitled"
 	}
 	leftText := modeTag + "  " + title

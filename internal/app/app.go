@@ -5,13 +5,13 @@ import (
 	"fmt"
 	"strings"
 
-	"tsuzuri/internal/content"
-	"tsuzuri/internal/core"
-	"tsuzuri/internal/dashboard"
-	"tsuzuri/internal/header"
-	"tsuzuri/internal/preview"
-	"tsuzuri/internal/sidebar"
-	"tsuzuri/internal/theme"
+	"github.com/jaisuriya-11/tsuzuri/internal/content"
+	"github.com/jaisuriya-11/tsuzuri/internal/core"
+	"github.com/jaisuriya-11/tsuzuri/internal/dashboard"
+	"github.com/jaisuriya-11/tsuzuri/internal/header"
+	"github.com/jaisuriya-11/tsuzuri/internal/preview"
+	"github.com/jaisuriya-11/tsuzuri/internal/sidebar"
+	"github.com/jaisuriya-11/tsuzuri/internal/theme"
 
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
@@ -33,6 +33,14 @@ const (
 	focusPreview
 )
 
+// draftIDPrefix marks a synthetic buffer ID for a page that has never been
+// saved, so it has no file on disk (and no sidebar tree entry) yet.
+const draftIDPrefix = "draft:"
+
+func isDraftID(id string) bool {
+	return strings.HasPrefix(id, draftIDPrefix)
+}
+
 // Model represents the root App container state.
 type Model struct {
 	store         *core.Store
@@ -50,6 +58,14 @@ type Model struct {
 	showKeymap    bool
 	leaderPending bool
 
+	// openBuffers is the ordered list of page IDs currently open as editor
+	// tabs (VSCode-style: only pages you've actually opened, not every file
+	// in the workspace). Entries may be draftIDPrefix-prefixed synthetic IDs
+	// for unsaved new pages.
+	openBuffers []string
+	drafts      map[string]core.Page
+	draftSeq    int
+
 	dashboard dashboard.Model
 	header    header.Model
 	sidebar   sidebar.Model
@@ -57,7 +73,9 @@ type Model struct {
 	preview   preview.Model
 }
 
-// New constructs the root App container initialized with a core.Store.
+// New constructs the root App container initialized with a core.Store backed
+// by a real workspace directory on disk. The workspace may already contain
+// notes from a previous session (or none at all) — nothing is seeded.
 func New(store *core.Store) Model {
 	th := theme.DefaultTheme()
 	km := DefaultKeyMap()
@@ -69,37 +87,43 @@ func New(store *core.Store) Model {
 	pv := preview.New(th)
 
 	pages := store.List()
+	openable := nonFolderPages(pages)
 	sb.SetPages(pages)
-	ct.SetPages(pages)
 
-	var selectedID string
-	if len(pages) > 0 {
-		selectedID = pages[0].ID
-		sb.SetSelectedID(selectedID)
-		ct.SetPage(pages[0])
-		hd.SetPage(pages[0])
-		pv.SetPage(pages[0])
+	m := Model{
+		store:       store,
+		theme:       th,
+		keys:        km,
+		focus:       focusEditor,
+		viewMode:    viewModeDashboard,
+		sidebarOpen: true,
+		dashboard:   db,
+		header:      hd,
+		sidebar:     sb,
+		content:     ct,
+		preview:     pv,
 	}
 
-	ct.SetFocused(true)
-	db.SetRecentPages(pages)
-
-	return Model{
-		store:         store,
-		theme:         th,
-		keys:          km,
-		focus:         focusEditor,
-		viewMode:      viewModeDashboard,
-		selectedID:    selectedID,
-		sidebarOpen:   true,
-		showKeymap:    false,
-		leaderPending: false,
-		dashboard:     db,
-		header:        hd,
-		sidebar:       sb,
-		content:       ct,
-		preview:       pv,
+	if len(openable) > 0 {
+		m.displayPage(openable[0])
 	}
+
+	m.content.SetFocused(true)
+	m.dashboard.SetRecentPages(openable)
+
+	return m
+}
+
+// nonFolderPages filters out plain folder nodes, returning only pages that
+// have real Markdown content and can be opened in the editor.
+func nonFolderPages(pages []core.Page) []core.Page {
+	openable := make([]core.Page, 0, len(pages))
+	for _, p := range pages {
+		if !p.IsFolder {
+			openable = append(openable, p)
+		}
+	}
+	return openable
 }
 
 // Init initializes child component commands.
@@ -118,6 +142,206 @@ func (m *Model) updateLayout() {
 	m.sidebar.SetSize(sidebarW, bodyH)
 	m.content.SetSize(editorW, bodyH)
 	m.preview.SetSize(previewW, bodyH)
+}
+
+// lookupPage resolves a buffer ID to its Page, whether it's a saved page on
+// disk or an unsaved draft held only in memory.
+func (m *Model) lookupPage(id string) (core.Page, bool) {
+	if isDraftID(id) {
+		p, ok := m.drafts[id]
+		return p, ok
+	}
+	p, err := m.store.Get(id)
+	if err != nil || p.IsFolder {
+		return core.Page{}, false
+	}
+	return p, true
+}
+
+// addBuffer ensures id is present in the open-buffers list, appending it at
+// the end if it's new (VSCode-style: tabs persist in the order opened).
+func (m *Model) addBuffer(id string) {
+	for _, b := range m.openBuffers {
+		if b == id {
+			return
+		}
+	}
+	m.openBuffers = append(m.openBuffers, id)
+}
+
+// renameBuffer swaps an open tab from oldID to newID in place, used both for
+// on-disk renames and for a draft's first save (synthetic ID -> real ID).
+func (m *Model) renameBuffer(oldID, newID string) {
+	for i, b := range m.openBuffers {
+		if b == oldID {
+			m.openBuffers[i] = newID
+			return
+		}
+	}
+}
+
+// removeBuffer closes a tab, discarding its draft content if it was never saved.
+func (m *Model) removeBuffer(id string) {
+	if isDraftID(id) {
+		delete(m.drafts, id)
+	}
+	for i, b := range m.openBuffers {
+		if b == id {
+			m.openBuffers = append(m.openBuffers[:i], m.openBuffers[i+1:]...)
+			return
+		}
+	}
+}
+
+// resolveBuffers loads full Page data for every open tab, silently dropping
+// any that no longer resolve (e.g. deleted from disk in another way).
+func (m *Model) resolveBuffers() []core.Page {
+	pages := make([]core.Page, 0, len(m.openBuffers))
+	valid := make([]string, 0, len(m.openBuffers))
+	for _, id := range m.openBuffers {
+		if p, ok := m.lookupPage(id); ok {
+			pages = append(pages, p)
+			valid = append(valid, id)
+		}
+	}
+	m.openBuffers = valid
+	return pages
+}
+
+// displayPage wires p up as the active document across sidebar selection,
+// open tabs, content, header, and preview, without touching focus or view mode.
+func (m *Model) displayPage(p core.Page) {
+	m.selectedID = p.ID
+	m.addBuffer(p.ID)
+	m.content.SetPages(m.resolveBuffers())
+	m.sidebar.SetSelectedID(p.ID)
+	m.content.SetPage(p)
+	m.header.SetPage(p)
+	m.preview.SetPage(p)
+}
+
+// openPage displays id (a saved page or an open draft) and switches focus
+// into the editor so the user can start typing immediately.
+func (m *Model) openPage(id string) tea.Cmd {
+	p, ok := m.lookupPage(id)
+	if !ok {
+		return nil
+	}
+	m.displayPage(p)
+	m.viewMode = viewModeWorkspace
+	m.focus = focusEditor
+	m.sidebar.SetFocused(false)
+	m.preview.SetFocused(false)
+	return m.content.Focus()
+}
+
+// newDraft starts an unsaved in-memory page under parentID. Nothing touches
+// disk until the user explicitly saves it with :w or :wq.
+func (m *Model) newDraft(parentID string) core.Page {
+	m.draftSeq++
+	id := fmt.Sprintf("%s%d", draftIDPrefix, m.draftSeq)
+	p := core.Page{ID: id, Title: "Untitled", ParentID: parentID}
+	if m.drafts == nil {
+		m.drafts = make(map[string]core.Page)
+	}
+	m.drafts[id] = p
+	return p
+}
+
+// createPage opens a brand-new unsaved draft under parentID for editing.
+func (m *Model) createPage(parentID string) tea.Cmd {
+	draft := m.newDraft(parentID)
+	return m.openPage(draft.ID)
+}
+
+// saveActiveBuffer persists content to the active buffer: a first :w on a
+// draft materializes it on disk for the very first time (and swaps its tab
+// over to the real ID); saving an already-persisted page just rewrites it.
+func (m *Model) saveActiveBuffer(content string) {
+	if m.selectedID == "" {
+		m.statusMessage = "No page open to save"
+		return
+	}
+
+	if isDraftID(m.selectedID) {
+		draft, ok := m.drafts[m.selectedID]
+		if !ok {
+			m.statusMessage = "Error saving page: draft no longer exists"
+			return
+		}
+		created, err := m.store.Create(draft.Title, draft.ParentID)
+		if err != nil {
+			m.statusMessage = "Error saving page: " + err.Error()
+			return
+		}
+		created.Content = content
+		saved, err := m.store.Update(created)
+		if err != nil {
+			m.statusMessage = "Error saving page: " + err.Error()
+			return
+		}
+		oldID := m.selectedID
+		delete(m.drafts, oldID)
+		m.renameBuffer(oldID, saved.ID)
+		m.sidebar.SetPages(m.store.List())
+		m.displayPage(saved)
+		m.statusMessage = "Saved " + saved.Title + ".md"
+		return
+	}
+
+	p, err := m.store.Get(m.selectedID)
+	if err != nil {
+		m.statusMessage = "Error saving page: " + err.Error()
+		return
+	}
+	p.Content = content
+	updated, err := m.store.Update(p)
+	if err != nil {
+		m.statusMessage = "Error saving page: " + err.Error()
+		return
+	}
+	m.renameBuffer(m.selectedID, updated.ID)
+	m.sidebar.SetPages(m.store.List())
+	m.displayPage(updated)
+	m.statusMessage = "Saved " + updated.Title + ".md"
+}
+
+// closeActiveBuffer closes the current tab (discarding unsaved draft content,
+// exactly like closing an unsaved tab in VSCode) and focuses the tab that
+// now sits in its place, VSCode-style.
+func (m *Model) closeActiveBuffer() tea.Cmd {
+	if m.selectedID == "" {
+		return nil
+	}
+
+	idx := -1
+	for i, b := range m.openBuffers {
+		if b == m.selectedID {
+			idx = i
+			break
+		}
+	}
+
+	m.removeBuffer(m.selectedID)
+	remaining := m.resolveBuffers()
+	m.content.SetPages(remaining)
+
+	if len(remaining) == 0 {
+		m.selectedID = ""
+		m.content.SetPage(core.Page{})
+		m.header.SetPage(core.Page{})
+		m.preview.SetPage(core.Page{})
+		return nil
+	}
+
+	nextIdx := idx
+	if nextIdx >= len(remaining) {
+		nextIdx = len(remaining) - 1
+	}
+	if nextIdx < 0 {
+		nextIdx = 0
+	}
+	return m.openPage(remaining[nextIdx].ID)
 }
 
 // Update routes events down and handles events emitted up from child components.
@@ -177,24 +401,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, tea.Quit
 
 			case msg.String() == "n":
-				newPage, err := m.store.Create("")
-				if err != nil {
-					m.statusMessage = "Error creating page: " + err.Error()
-				} else {
-					m.selectedID = newPage.ID
-					pages := m.store.List()
-					m.sidebar.SetPages(pages)
-					m.content.SetPages(pages)
-					m.sidebar.SetSelectedID(newPage.ID)
-					m.content.SetPage(newPage)
-					m.header.SetPage(newPage)
-					m.preview.SetPage(newPage)
-					m.viewMode = viewModeWorkspace
-					m.focus = focusEditor
-					m.sidebar.SetFocused(false)
-					m.preview.SetFocused(false)
-					cmds = append(cmds, m.content.Focus())
-				}
+				cmds = append(cmds, m.createPage(""))
 				return m, tea.Batch(cmds...)
 
 			case msg.String() == "f" || key.Matches(msg, m.keys.Tab):
@@ -209,24 +416,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				action := m.dashboard.SelectedAction()
 				switch action {
 				case dashboard.ActionNewPage:
-					newPage, err := m.store.Create("")
-					if err != nil {
-						m.statusMessage = "Error creating page: " + err.Error()
-					} else {
-						m.selectedID = newPage.ID
-						pages := m.store.List()
-						m.sidebar.SetPages(pages)
-						m.content.SetPages(pages)
-						m.sidebar.SetSelectedID(newPage.ID)
-						m.content.SetPage(newPage)
-						m.header.SetPage(newPage)
-						m.preview.SetPage(newPage)
-						m.viewMode = viewModeWorkspace
-						m.focus = focusEditor
-						m.sidebar.SetFocused(false)
-						m.preview.SetFocused(false)
-						cmds = append(cmds, m.content.Focus())
-					}
+					cmds = append(cmds, m.createPage(""))
 					return m, tea.Batch(cmds...)
 
 				case dashboard.ActionBrowse:
@@ -243,20 +433,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 			case msg.String() >= "1" && msg.String() <= "9":
 				idx := int(msg.String()[0] - '1')
-				pages := m.store.List()
-				if idx < len(pages) {
-					m.selectedID = pages[idx].ID
-					m.sidebar.SetPages(pages)
-					m.content.SetPages(pages)
-					m.sidebar.SetSelectedID(pages[idx].ID)
-					m.content.SetPage(pages[idx])
-					m.header.SetPage(pages[idx])
-					m.preview.SetPage(pages[idx])
-					m.viewMode = viewModeWorkspace
-					m.focus = focusEditor
-					m.sidebar.SetFocused(false)
-					m.preview.SetFocused(false)
-					cmds = append(cmds, m.content.Focus())
+				openable := nonFolderPages(m.store.List())
+				if idx < len(openable) {
+					cmds = append(cmds, m.openPage(openable[idx].ID))
 					return m, tea.Batch(cmds...)
 				}
 			}
@@ -285,12 +464,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 
 		case key.Matches(msg, m.keys.Dashboard):
-			m.dashboard.SetRecentPages(m.store.List())
+			m.dashboard.SetRecentPages(nonFolderPages(m.store.List()))
 			m.viewMode = viewModeDashboard
 			return m, nil
 
 		case msg.String() == "esc" && m.focus == focusSidebar && !m.sidebar.IsRenaming() && !m.sidebar.IsSearching():
-			m.dashboard.SetRecentPages(m.store.List())
+			m.dashboard.SetRecentPages(nonFolderPages(m.store.List()))
 			m.viewMode = viewModeDashboard
 			return m, nil
 
@@ -330,15 +509,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 
+		case msg.String() == "x" && m.focus == focusEditor && m.content.Mode() == content.ModeNormal:
+			cmds = append(cmds, m.closeActiveBuffer())
+			return m, tea.Batch(cmds...)
+
 		case msg.String() == "]" || msg.String() == "[":
 			canCycle := (m.focus == focusEditor && m.content.Mode() == content.ModeNormal) ||
 				(m.focus == focusSidebar && !m.sidebar.IsRenaming() && !m.sidebar.IsSearching()) ||
 				(m.focus == focusPreview)
 			if canCycle {
-				pages := m.store.List()
-				if len(pages) > 1 {
+				open := m.resolveBuffers()
+				if len(open) > 1 {
 					currIdx := 0
-					for i, p := range pages {
+					for i, p := range open {
 						if p.ID == m.selectedID {
 							currIdx = i
 							break
@@ -346,91 +529,44 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 					nextIdx := currIdx + 1
 					if msg.String() == "[" {
-						nextIdx = currIdx - 1 + len(pages)
+						nextIdx = currIdx - 1 + len(open)
 					}
-					nextIdx %= len(pages)
-					nextPage := pages[nextIdx]
-					m.selectedID = nextPage.ID
-					m.sidebar.SetSelectedID(nextPage.ID)
-					m.content.SetPage(nextPage)
-					m.header.SetPage(nextPage)
-					m.preview.SetPage(nextPage)
-					m.content.SetPages(pages)
-					return m, nil
+					nextIdx %= len(open)
+					cmds = append(cmds, m.openPage(open[nextIdx].ID))
+					return m, tea.Batch(cmds...)
 				}
 			}
 
 		case key.Matches(msg, m.keys.NewPage):
-			newPage, err := m.store.Create("")
-			if err != nil {
-				m.statusMessage = "Error creating page: " + err.Error()
-			} else {
-				m.selectedID = newPage.ID
-				pages := m.store.List()
-				m.sidebar.SetPages(pages)
-				m.content.SetPages(pages)
-				m.sidebar.SetSelectedID(newPage.ID)
-				m.content.SetPage(newPage)
-				m.header.SetPage(newPage)
-				m.preview.SetPage(newPage)
-				m.focus = focusEditor
-				m.sidebar.SetFocused(false)
-				m.preview.SetFocused(false)
-				cmds = append(cmds, m.content.Focus())
-			}
+			cmds = append(cmds, m.createPage(""))
 		}
 
 	// Domain message bus
 	case core.PageSelectedMsg:
-		m.selectedID = msg.ID
-		if p, err := m.store.Get(msg.ID); err == nil {
-			m.content.SetPage(p)
-			m.header.SetPage(p)
-			m.preview.SetPage(p)
-		} else {
-			m.statusMessage = "Error loading page: " + err.Error()
+		if cmd := m.openPage(msg.ID); cmd != nil {
+			cmds = append(cmds, cmd)
 		}
 
 	case core.PageCreatedMsg:
-		var newPage core.Page
-		var err error
-		if msg.Page.ParentID != "" {
-			newPage, err = m.store.CreateChild(msg.Page.ParentID, msg.Page.Title)
-		} else {
-			newPage, err = m.store.Create(msg.Page.Title)
-		}
-		if err != nil {
-			m.statusMessage = "Error creating page: " + err.Error()
-		} else {
-			m.selectedID = newPage.ID
-			pages := m.store.List()
-			m.sidebar.SetPages(pages)
-			m.content.SetPages(pages)
-			m.sidebar.SetSelectedID(newPage.ID)
-			m.content.SetPage(newPage)
-			m.header.SetPage(newPage)
-			m.preview.SetPage(newPage)
-			if m.focus == focusSidebar {
-				cmds = append(cmds, m.sidebar.StartRenaming())
-			} else {
-				m.focus = focusEditor
-				m.sidebar.SetFocused(false)
-				m.preview.SetFocused(false)
-				cmds = append(cmds, m.content.Focus())
-			}
-		}
+		m.statusMessage = ""
+		cmds = append(cmds, m.createPage(msg.Page.ParentID))
 
 	case core.PageUpdatedMsg:
-		if err := m.store.Update(msg.Page); err != nil {
+		updated, err := m.store.Update(msg.Page)
+		if err != nil {
 			m.statusMessage = "Error updating page: " + err.Error()
 		} else {
-			pages := m.store.List()
-			m.sidebar.SetPages(pages)
-			m.content.SetPages(pages)
+			m.sidebar.SetPages(m.store.List())
+			m.sidebar.SetSelectedID(updated.ID)
 			if msg.Page.ID == m.selectedID {
-				m.header.SetPage(msg.Page)
-				m.preview.SetTitle(msg.Page.Title)
+				m.renameBuffer(msg.Page.ID, updated.ID)
+				m.selectedID = updated.ID
+				m.header.SetPage(updated)
+				m.preview.SetTitle(updated.Title)
+			} else {
+				m.renameBuffer(msg.Page.ID, updated.ID)
 			}
+			m.content.SetPages(m.resolveBuffers())
 		}
 
 	case core.PageDeletedMsg:
@@ -439,39 +575,35 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			pages := m.store.List()
 			m.sidebar.SetPages(pages)
-			m.content.SetPages(pages)
-			if len(pages) > 0 {
-				m.sidebar.SetSelectedID(pages[0].ID)
-				if p, err := m.store.Get(pages[0].ID); err == nil {
-					m.selectedID = p.ID
-					m.content.SetPage(p)
-					m.header.SetPage(p)
-					m.preview.SetPage(p)
+			m.removeBuffer(msg.ID)
+
+			if msg.ID != m.selectedID {
+				m.content.SetPages(m.resolveBuffers())
+				break
+			}
+
+			remaining := m.resolveBuffers()
+			m.content.SetPages(remaining)
+			if len(remaining) > 0 {
+				cmds = append(cmds, m.openPage(remaining[0].ID))
+			} else {
+				m.selectedID = ""
+				m.content.SetPage(core.Page{})
+				m.header.SetPage(core.Page{})
+				m.preview.SetPage(core.Page{})
+				if len(pages) == 0 {
+					m.dashboard.SetRecentPages(pages)
+					m.viewMode = viewModeDashboard
 				}
 			}
 		}
 
 	case core.VimSaveMsg:
-		if p, err := m.store.Get(m.selectedID); err == nil {
-			p.Content = msg.Content
-			if updateErr := m.store.Update(p); updateErr != nil {
-				m.statusMessage = "Error saving page: " + updateErr.Error()
-			} else {
-				pages := m.store.List()
-				m.sidebar.SetPages(pages)
-				m.content.SetPages(pages)
-				m.preview.SetContent(msg.Content)
-			}
-		} else {
-			m.statusMessage = "Error saving page: " + err.Error()
-		}
+		m.saveActiveBuffer(msg.Content)
 
 	case core.VimQuitMsg:
-		if msg.Save {
-			if p, err := m.store.Get(m.selectedID); err == nil {
-				p.Content = m.content.Value()
-				_ = m.store.Update(p)
-			}
+		if msg.Save && m.selectedID != "" {
+			m.saveActiveBuffer(m.content.Value())
 		}
 		return m, tea.Quit
 	}
@@ -520,23 +652,35 @@ func (m Model) renderBottomBar() string {
 		case content.ModeCommand:
 			modeTag = lipgloss.NewStyle().Bold(true).Background(m.theme.CommandBg).Foreground(m.theme.DarkFg).Padding(0, 1).Render("󰘳 COMMAND")
 		default:
-			modeTag = lipgloss.NewStyle().Bold(true).Background(m.theme.NormalBg).Foreground(m.theme.DarkFg).Padding(0, 1).Render(" NORMAL")
+			modeTag = lipgloss.NewStyle().Bold(true).Background(m.theme.NormalBg).Foreground(m.theme.DarkFg).Padding(0, 1).Render(" NORMAL")
 		}
 	}
 
-	docTitle := "Untitled"
-	if p, err := m.store.Get(m.selectedID); err == nil && p.Title != "" {
-		docTitle = p.Title
+	var filePill string
+	if p, ok := m.lookupPage(m.selectedID); ok {
+		docTitle := p.Title
+		if docTitle == "" {
+			docTitle = "Untitled"
+		}
+		if !strings.HasSuffix(docTitle, ".md") {
+			docTitle += ".md"
+		}
+		if isDraftID(m.selectedID) {
+			docTitle += " (unsaved)"
+		}
+		filePill = lipgloss.NewStyle().
+			Bold(true).
+			Foreground(m.theme.TitleFg).
+			Background(m.theme.SelectedBg).
+			Padding(0, 1).
+			Render(" " + docTitle)
+	} else {
+		filePill = lipgloss.NewStyle().
+			Italic(true).
+			Foreground(m.theme.MutedFg).
+			Padding(0, 1).
+			Render("no page open")
 	}
-	if !strings.HasSuffix(docTitle, ".md") {
-		docTitle += ".md"
-	}
-	filePill := lipgloss.NewStyle().
-		Bold(true).
-		Foreground(m.theme.TitleFg).
-		Background(m.theme.SelectedBg).
-		Padding(0, 1).
-		Render(" " + docTitle)
 
 	var hint string
 	if m.statusMessage != "" {
@@ -548,8 +692,8 @@ func (m Model) renderBottomBar() string {
 
 	previewStatus := lipgloss.NewStyle().Bold(true).Foreground(m.theme.CommandBg).Render("󰈈 " + m.preview.ScrollStatus())
 	fileTypePill := lipgloss.NewStyle().Foreground(m.theme.MutedFg).Render("󰈙 markdown")
-	tabHint := lipgloss.NewStyle().Foreground(m.theme.MutedFg).Render("[/] tabs")
-	keymapHint := lipgloss.NewStyle().Bold(true).Foreground(m.theme.NormalBg).Render("󰌌 space+h")
+	tabHint := lipgloss.NewStyle().Foreground(m.theme.MutedFg).Render("[/] tabs  x close")
+	keymapHint := lipgloss.NewStyle().Bold(true).Foreground(m.theme.NormalBg).Render(" space+h")
 	rightContent := previewStatus + "   " + fileTypePill + "   " + tabHint + "   " + keymapHint
 
 	leftW := lipgloss.Width(leftContent)

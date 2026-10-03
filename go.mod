@@ -1,4 +1,4 @@
-module tsuzuri
+module github.com/jaisuriya-11/tsuzuri
 
 go 1.26.6
 

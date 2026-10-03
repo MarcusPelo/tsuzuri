@@ -4,8 +4,8 @@ package sidebar
 import (
 	"strings"
 
-	"tsuzuri/internal/core"
-	"tsuzuri/internal/theme"
+	"github.com/jaisuriya-11/tsuzuri/internal/core"
+	"github.com/jaisuriya-11/tsuzuri/internal/theme"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
@@ -271,33 +271,52 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			m.searchInput.Focus()
 			return m, textinput.Blink
 
+		// Pure cursor movement — nvim-tree never opens a file just because the
+		// cursor passed over it. Opening is always an explicit action below.
 		case "up", "k":
 			if m.cursor > 0 {
 				m.cursor--
 				m.clampCursor()
-				if p, ok := m.SelectedPage(); ok {
-					selectedID := p.ID
-					return m, func() tea.Msg { return core.PageSelectedMsg{ID: selectedID} }
-				}
 			}
 
 		case "down", "j":
 			if m.cursor < len(items)-1 {
 				m.cursor++
 				m.clampCursor()
-				if p, ok := m.SelectedPage(); ok {
-					selectedID := p.ID
-					return m, func() tea.Msg { return core.PageSelectedMsg{ID: selectedID} }
-				}
 			}
 
-		case "enter":
-			if len(items) > 0 && m.cursor >= 0 && m.cursor < len(items) {
-				curr := items[m.cursor]
-				if curr.HasChildren {
+		// Enter/l: nvim-tree's "interact" action. On anything expandable
+		// (a plain folder, or a page with sub-pages) it only toggles
+		// expand/collapse — it never opens a file out from under you. On a
+		// leaf page it opens that file. Press 'o' to open a parent page's own
+		// content explicitly.
+		case "enter", "l", "right":
+			if len(items) == 0 || m.cursor < 0 || m.cursor >= len(items) {
+				break
+			}
+			curr := items[m.cursor]
+			if curr.HasChildren {
+				if msg.String() == "l" || msg.String() == "right" {
+					if !m.isExpanded(curr.Page.ID) {
+						m.expanded[curr.Page.ID] = true
+					}
+				} else {
 					m.expanded[curr.Page.ID] = !m.isExpanded(curr.Page.ID)
 				}
-				selectedID := curr.Page.ID
+				return m, nil
+			}
+			if curr.Page.IsFolder {
+				// Empty plain folder — nothing to toggle or open.
+				return m, nil
+			}
+			selectedID := curr.Page.ID
+			return m, func() tea.Msg { return core.PageSelectedMsg{ID: selectedID} }
+
+		case "o":
+			// Explicitly open the selected page's own content, even if it
+			// also has sub-pages (the Notion half of a dual-nature page).
+			if p, ok := m.SelectedPage(); ok && !p.IsFolder {
+				selectedID := p.ID
 				return m, func() tea.Msg { return core.PageSelectedMsg{ID: selectedID} }
 			}
 
@@ -311,15 +330,6 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 				curr := items[m.cursor]
 				if curr.HasChildren {
 					m.expanded[curr.Page.ID] = !m.isExpanded(curr.Page.ID)
-					return m, nil
-				}
-			}
-
-		case "l", "right":
-			if len(items) > 0 && m.cursor >= 0 && m.cursor < len(items) {
-				curr := items[m.cursor]
-				if curr.HasChildren && !m.isExpanded(curr.Page.ID) {
-					m.expanded[curr.Page.ID] = true
 					return m, nil
 				}
 			}
@@ -350,7 +360,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			}
 
 		case "d", "x":
-			if p, ok := m.SelectedPage(); ok && len(m.pages) > 1 {
+			if p, ok := m.SelectedPage(); ok {
 				deletedID := p.ID
 				return m, func() tea.Msg { return core.PageDeletedMsg{ID: deletedID} }
 			}
@@ -360,10 +370,15 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	return m, nil
 }
 
-// getPageIcon returns the consistent Nerd Font document icon for a page.
-func getPageIcon(p core.Page, index int) string {
+// getPageIcon returns the Nerd Font glyph for a tree entry: a custom emoji
+// icon if the page has one, a closed-folder glyph for empty plain folders,
+// or the default Markdown document glyph otherwise.
+func getPageIcon(p core.Page) string {
 	if p.Icon != "" {
 		return p.Icon
+	}
+	if p.IsFolder {
+		return ""
 	}
 	return ""
 }
@@ -423,6 +438,14 @@ func (m Model) View() string {
 		rowWidth = 10
 	}
 
+	if len(items) == 0 {
+		emptyMsg := "Empty workspace"
+		if len(m.pages) > 0 {
+			emptyMsg = "No matches"
+		}
+		b.WriteString(" " + lipgloss.NewStyle().Italic(true).Foreground(m.theme.MutedFg).Render(emptyMsg) + "\n")
+	}
+
 	for i, item := range items {
 		displayTitle := item.Page.Title
 		if displayTitle == "" {
@@ -450,7 +473,7 @@ func (m Model) View() string {
 					iconPart = lipgloss.NewStyle().Foreground(m.theme.SidebarBg).Background(m.theme.SelectedBg).Render(folderIcon)
 					titlePart = lipgloss.NewStyle().Bold(true).Foreground(m.theme.SelectedFg).Background(m.theme.SelectedBg).Render(displayTitle)
 				} else {
-					fileIcon := getPageIcon(item.Page, i)
+					fileIcon := getPageIcon(item.Page)
 					prefix = lipgloss.NewStyle().Background(m.theme.SelectedBg).Render(" " + indent + "  ")
 					iconPart = lipgloss.NewStyle().Foreground(m.theme.NormalBg).Background(m.theme.SelectedBg).Render(fileIcon + " ")
 					titlePart = lipgloss.NewStyle().Bold(true).Foreground(m.theme.SelectedFg).Background(m.theme.SelectedBg).Render(displayTitle)
@@ -479,7 +502,7 @@ func (m Model) View() string {
 			folderStyle := lipgloss.NewStyle().Foreground(m.theme.SidebarBg)
 			row = " " + indent + chevron + folderStyle.Render(folderIcon) + displayTitle
 		} else {
-			fileIcon := getPageIcon(item.Page, i)
+			fileIcon := getPageIcon(item.Page)
 			iconStyle := lipgloss.NewStyle().Foreground(m.theme.NormalBg)
 			row = " " + indent + "  " + iconStyle.Render(fileIcon+" ") + displayTitle
 		}

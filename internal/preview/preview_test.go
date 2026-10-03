@@ -4,9 +4,9 @@ import (
 	"strings"
 	"testing"
 
-	"tsuzuri/internal/core"
-	"tsuzuri/internal/preview"
-	"tsuzuri/internal/theme"
+	"github.com/jaisuriya-11/tsuzuri/internal/core"
+	"github.com/jaisuriya-11/tsuzuri/internal/preview"
+	"github.com/jaisuriya-11/tsuzuri/internal/theme"
 )
 
 func TestCompiler(t *testing.T) {

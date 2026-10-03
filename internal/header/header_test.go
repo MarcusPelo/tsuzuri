@@ -4,16 +4,16 @@ import (
 	"strings"
 	"testing"
 
-	"tsuzuri/internal/core"
-	"tsuzuri/internal/header"
-	"tsuzuri/internal/theme"
+	"github.com/jaisuriya-11/tsuzuri/internal/core"
+	"github.com/jaisuriya-11/tsuzuri/internal/header"
+	"github.com/jaisuriya-11/tsuzuri/internal/theme"
 )
 
 func TestHeaderComponent(t *testing.T) {
 	th := theme.DefaultTheme()
 	h := header.New(th)
 	h.SetSize(100, 1)
-	h.SetPage(core.Page{Title: "Design Doc"})
+	h.SetPage(core.Page{ID: "Design Doc.md", Title: "Design Doc"})
 	h.SetMode("INSERT", false)
 
 	view := h.View()

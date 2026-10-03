@@ -4,9 +4,9 @@ import (
 	"strings"
 	"testing"
 
-	"tsuzuri/internal/core"
-	"tsuzuri/internal/dashboard"
-	"tsuzuri/internal/theme"
+	"github.com/jaisuriya-11/tsuzuri/internal/core"
+	"github.com/jaisuriya-11/tsuzuri/internal/dashboard"
+	"github.com/jaisuriya-11/tsuzuri/internal/theme"
 
 	tea "github.com/charmbracelet/bubbletea"
 )

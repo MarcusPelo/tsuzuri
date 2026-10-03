@@ -3,8 +3,8 @@ package preview
 import (
 	"fmt"
 
-	"tsuzuri/internal/core"
-	"tsuzuri/internal/theme"
+	"github.com/jaisuriya-11/tsuzuri/internal/core"
+	"github.com/jaisuriya-11/tsuzuri/internal/theme"
 
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
@@ -17,6 +17,7 @@ type Model struct {
 	viewport   viewport.Model
 	width      int
 	height     int
+	pageID     string
 	title      string
 	rawContent string
 	focused    bool
@@ -82,6 +83,7 @@ func (m Model) ScrollStatus() string {
 
 // SetPage updates both the title and content from a domain Page entity.
 func (m *Model) SetPage(p core.Page) {
+	m.pageID = p.ID
 	m.title = p.Title
 	if m.title == "" {
 		m.title = "Untitled"
@@ -162,7 +164,12 @@ func (m Model) View() string {
 		Padding(0, 1)
 
 	headerTab := tabStyle.Render("󰈈 preview")
+
 	vpView := m.viewport.View()
+	if m.pageID == "" {
+		placeholder := lipgloss.NewStyle().Italic(true).Foreground(m.theme.MutedFg).Render("Nothing to preview")
+		vpView = lipgloss.Place(m.viewport.Width, m.viewport.Height, lipgloss.Center, lipgloss.Center, placeholder)
+	}
 
 	inner := lipgloss.JoinVertical(lipgloss.Left, headerTab, vpView)
 
