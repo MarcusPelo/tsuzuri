@@ -845,3 +845,30 @@ func TestEmojiVariationSelectorsNeverReachTheScreen(t *testing.T) {
 		t.Fatal("variation selectors / joiners must be stripped so rows keep their width")
 	}
 }
+
+func TestAddChoiceQuestionAndChangeType(t *testing.T) {
+	h := openWith(t, "```form\ntitle: Survey\n? Name\n```")
+	h.clickText("add question")
+	h.keys("Favourite colour")
+	h.key(tea.KeyEnter)
+	if v := h.view(); !strings.Contains(v, "Single choice") || !strings.Contains(v, "Rating") {
+		t.Fatalf("expected the question type menu:\n%s", v)
+	}
+	h.keys("3") // Single choice
+	for range "Option 1 | Option 2 | Option 3" {
+		h.key(tea.KeyBackspace)
+	}
+	h.keys("Red, Green | Blue")
+	h.key(tea.KeyEnter)
+	if got := h.text(); !strings.Contains(got, "? Favourite colour (choice): Red | Green | Blue") {
+		t.Fatalf("choice question not added:\n%s", got)
+	}
+
+	// Change "Name" into a rating question.
+	h.clickText("Name")
+	h.keys("2") // Change type
+	h.keys("5") // Rating
+	if got := h.text(); !strings.Contains(got, "? Name (rating)") {
+		t.Fatalf("type change not applied:\n%s", got)
+	}
+}
