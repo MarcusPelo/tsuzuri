@@ -25,6 +25,11 @@ type slashItem struct {
 }
 
 var slashItems = []slashItem{
+	{section: "Table", icon: "\U000f0a15", label: "Add row below", aliases: "row insert", action: "table:addrow"},
+	{section: "Table", icon: "\U000f0a12", label: "Add column right", aliases: "column col insert", action: "table:addcol"},
+	{section: "Table", icon: "\U000f0a17", label: "Delete row", aliases: "row remove", action: "table:delrow"},
+	{section: "Table", icon: "\U000f0a14", label: "Delete column", aliases: "column col remove", action: "table:delcol"},
+	{section: "Table", icon: "\U000f04eb", label: "Format table", aliases: "align tidy", action: "table:format"},
 	{section: "Basic blocks", icon: "\U000f026b", label: "Heading 1", hint: "#", aliases: "h1 title", before: "# ", block: true},
 	{section: "Basic blocks", icon: "\U000f026c", label: "Heading 2", hint: "##", aliases: "h2 subtitle", before: "## ", block: true},
 	{section: "Basic blocks", icon: "\U000f026d", label: "Heading 3", hint: "###", aliases: "h3", before: "### ", block: true},
@@ -85,12 +90,13 @@ func (m *Model) slashQuery() (string, bool) {
 func (m *Model) slashMatches() []slashItem {
 	q, _ := m.slashQuery()
 	q = strings.ToLower(strings.TrimSpace(q))
-	if q == "" {
-		return slashItems
-	}
+	inTable := m.InTable()
 	var out []slashItem
 	for _, it := range slashItems {
-		if strings.Contains(strings.ToLower(it.label+" "+it.aliases), q) {
+		if it.section == "Table" && !inTable {
+			continue
+		}
+		if q == "" || strings.Contains(strings.ToLower(it.label+" "+it.aliases), q) {
 			out = append(out, it)
 		}
 	}
@@ -178,6 +184,10 @@ func (m *Model) applySlash(it slashItem) tea.Cmd {
 	ta.DeleteBefore(1 + len([]rune(q)))
 	m.slash = nil
 
+	if op, ok := strings.CutPrefix(it.action, "table:"); ok {
+		m.tableOp(op)
+		return nil
+	}
 	if it.action != "" {
 		action := it.action
 		return func() tea.Msg { return core.SlashActionMsg{Action: action} }

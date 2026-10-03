@@ -267,7 +267,9 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			}
 		}
 		if isKey && (k.String() == "tab" || k.String() == "shift+tab") {
-			m.indent(k.String() == "tab")
+			if !m.nextCell(k.String() == "tab") {
+				m.indent(k.String() == "tab")
+			}
 			return m, nil
 		}
 		if isKey && k.String() == "esc" {
@@ -302,6 +304,15 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 					return m, m.focusTextarea()
 				}
 			case "enter":
+				if op, ok := tableCommands[strings.TrimSpace(m.cmdInput.Value())]; ok {
+					m.mode = ModeNormal
+					m.cmdInput.Blur()
+					focus := m.focusTextarea()
+					if !m.tableOp(op) {
+						return m, tea.Batch(focus, func() tea.Msg { return core.StatusMsg{Text: "Not in a table", Error: true} })
+					}
+					return m, focus
+				}
 				out := parseVimCommand(m.cmdInput.Value(), m.textarea.Value())
 				m.mode = ModeNormal
 				m.cmdInput.Blur()

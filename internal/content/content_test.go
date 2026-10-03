@@ -209,3 +209,44 @@ func TestClickPastLineEndNeverPanics(t *testing.T) {
 		_ = c.View()
 	}
 }
+
+func TestTableEditing(t *testing.T) {
+	c := content.New(theme.DefaultTheme())
+	c.SetSize(80, 20)
+	c.SetPage(core.Page{ID: "a.md", Content: "| a | b |\n| --- | --- |\n| 1 | 2 |"})
+	c.SetFocused(true)
+
+	// Cursor on the "1" row; add a column to the right of the first cell.
+	c = keys(c, "jj")
+	c = keys(c, ":addcol")
+	c, _ = c.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	want := "| a   | Column | b   |\n| --- | ------ | --- |\n| 1   |        | 2   |"
+	if c.Value() != want {
+		t.Fatalf("addcol:\n%s\nwant\n%s", c.Value(), want)
+	}
+
+	// Tab moves through cells and adds a row after the last one.
+	c = keys(c, "i")
+	// From the new "Column" cell: Tab -> "2", Tab -> new row, first cell.
+	for i := 0; i < 2; i++ {
+		c, _ = c.Update(tea.KeyMsg{Type: tea.KeyTab})
+	}
+	c = keys(c, "x")
+	if lines := strings.Split(c.Value(), "\n"); len(lines) != 4 || !strings.HasPrefix(lines[3], "| x") {
+		t.Fatalf("Tab past the last cell should add a row and type into it:\n%s", c.Value())
+	}
+
+	// /delete row from the slash menu.
+	c = keys(c, " /delete row")
+	c, _ = c.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if strings.Count(c.Value(), "\n") != 2 {
+		t.Fatalf("expected the new row deleted:\n%s", c.Value())
+	}
+
+	// Outside a table the table actions are hidden and :addrow complains.
+	c.SetPage(core.Page{ID: "b.md", Content: "plain"})
+	c = keys(c, "A /")
+	if box, _, _, _ := c.SlashView(); strings.Contains(box, "Add row") {
+		t.Fatal("table actions should only show inside a table")
+	}
+}

@@ -191,7 +191,8 @@ Leader is `Space`, as in NvChad. Press `?` or `Space h` in the app for the cheat
 | NORMAL | `v` / `V` | Visual (character / line) selection: `y` copy, `d` cut, `Esc` cancel |
 | Mouse | drag | Select text; it's copied on release (a toast confirms) |
 | INSERT | `/` | Block menu (at line start or after a space; `↑↓`, `Enter`, `Esc`) |
-| INSERT | `Tab` / `Shift+Tab` | Indent (nests list items) / outdent |
+| INSERT | `Tab` / `Shift+Tab` | Indent (nests list items) / outdent; in a table, next / previous cell (Tab on the last cell adds a row) |
+| COMMAND | `:addrow` `:addcol` `:delrow` `:delcol` `:tablefmt` | Edit the table under the cursor (also in the `/` menu inside a table); columns are re-aligned |
 | INSERT | `Esc` | Back to NORMAL |
 | COMMAND | `:w` | Save (Save As for new notes) |
 | COMMAND | `:w name`, `:saveas name` | Save under a new name (`folder/name` works) |
