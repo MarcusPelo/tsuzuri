@@ -127,8 +127,12 @@ jobs:
         shell: pwsh
         run: |
           $version = (Get-Content dist/metadata.json | ConvertFrom-Json).version
-          $server = Start-Process python -ArgumentList '-m', 'http.server', '8765', '--directory', 'dist' -PassThru
-          Start-Sleep -Seconds 3
+          $server = Start-Process python -ArgumentList '-m', 'http.server', '8765', '--bind', '127.0.0.1', '--directory', 'dist' -PassThru
+          $up = $false
+          foreach ($i in 1..30) {
+            try { Invoke-WebRequest 'http://127.0.0.1:8765/checksums.txt' -UseBasicParsing -TimeoutSec 2 | Out-Null; $up = $true; break } catch { Start-Sleep -Seconds 1 }
+          }
+          if (-not $up) { throw 'test server did not start' }
           $env:TSUZURI_VERSION = "v$version"
           $env:TSUZURI_BASE_URL = 'http://127.0.0.1:8765'
           $env:TSUZURI_INSTALL_DIR = "$PWD\bin"
