@@ -1,6 +1,6 @@
 # Binary outputs
 bin/
-tsuzuri
+/tsuzuri
 *.exe
 *.exe~
 *.dll
@@ -15,3 +15,9 @@ tsuzuri.log
 .DS_Store
 .vscode/
 .idea/
+
+# Release artifacts
+dist/
+
+# Release artifacts
+dist/

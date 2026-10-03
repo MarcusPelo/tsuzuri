@@ -13,151 +13,178 @@
 
 </div>
 
-**Tsuzuri** (綴|り — *spelling, binding, writing*) is a terminal-based notebook and Markdown workspace application written in **Go**, powered by **Bubble Tea** and **Lip Gloss**.
+<p align="center">
+  <a href="https://github.com/jaisuriya-11/tsuzuri/actions/workflows/ci.yml"><img src="https://github.com/jaisuriya-11/tsuzuri/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/jaisuriya-11/tsuzuri/releases/latest"><img src="https://img.shields.io/github/v/release/jaisuriya-11/tsuzuri" alt="Release"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT License"></a>
+</p>
 
-It combines a React-like component architecture with a Vim-inspired text editor, allowing you to manage multi-page document notes, tasks, and code snippets directly inside your terminal without leaving the keyboard.
+**Tsuzuri** (綴り — *spelling, binding, writing*) is a Notion-style notebook for the terminal with an NvChad-inspired look. It edits plain Markdown files on disk with a Vim-style editor, a nested page tree, buffer tabs and a live preview, built in Go with [Bubble Tea](https://github.com/charmbracelet/bubbletea) and [Lip Gloss](https://github.com/charmbracelet/lipgloss).
 
-- **`internal/core`**: Domain entities (`Page`, `Block`), thread-safe `Store`, and decoupled `Msg` event definitions (`PageSelectedMsg`, `PageCreatedMsg`, etc.). Zero UI dependencies.
-- **`internal/theme`**: Shared design system tokens, color palettes, and Lip Gloss styles.
-- **`internal/dashboard`**: Landing page component (`<Dashboard/>`) with NvChad-style ASCII banner, quick navigation buttons, and recent notes.
-- **`internal/header`**: Header component (`<Header/>`) rendering status badges, 3-pane focus indicators, and navigation hints.
-- **`internal/sidebar`**: Notion-style sidebar component (`<Sidebar/>`) rendering workspace header, emoji-tagged document lists, cursor navigation, and inline title renaming.
-- **`internal/content`**: Content component (`<Body/>`) hosting the multi-line Vim Markdown code editor (`NORMAL`, `INSERT`, `COMMAND`).
-- **`internal/preview`**: Live Markdown compilation engine and viewport component (`<Preview/>`), compiling and rendering rich Markdown styles (headings, checklists, callouts, code blocks, tables) in real time on every keystroke.
-- **`internal/app`**: Root orchestrator container (`<App/>`) handling 3-pane window resize calculations, keymap shortcuts, view mode switching, and child message routing.
+## Features
 
-## 🌟 What the Project Is
+- **Your files, not a database.** Every page is a `.md` file in a normal folder. Use git, sync it, grep it, open it in any other editor.
+- **Notion-style nesting.** A page can have sub-pages: `Project.md` plus a sibling `Project/` folder. Plain folders show up as folders.
+- **NvChad-style UI.** Dashboard landing screen, tree sidebar, editor, live Markdown preview and a status line.
+- **Vim editing.** `NORMAL`, `INSERT` and `COMMAND` modes with `:w`, `:q`, `:wq`, `:x`, `:q!`.
+- **Buffer tabs.** Open several pages at once, switch with `[` / `]`, close with `x`. Unsaved tabs show a `●`.
+- **No surprise files.** New pages stay in memory until you `:w`, like an unsaved Vim buffer.
+- **Live preview.** Headings, checklists, callouts, code blocks and tables render as you type.
+- **Search** the tree with `/`, plus mouse support.
 
-### Landing Page (NvChad Dashboard)
+## Install
 
-| Shortcut | Description |
-| :--- | :--- |
-| `n` | Create a new document and open editor |
-| `f` / `Tab` | Open workspace and focus Sidebar |
-| `1` - `9` | Directly open recent document by index |
-| `j` / `k` or `↓` / `↑` | Move menu selection cursor |
-| `Enter` | Trigger selected dashboard action |
-| `q` / `Ctrl+C` | Quit application |
+### Prebuilt binaries
 
-### Workspace (Notion Mode)
+Download the archive for your OS and CPU from the [latest release](https://github.com/jaisuriya-11/tsuzuri/releases/latest), extract it and put `tsuzuri` somewhere on your `PATH`:
 
-| Shortcut | Description |
-| :--- | :--- |
-| `Ctrl+B` | Toggle sidebar on/off |
-| `Space + h` or `?` | Open **Keymap Modal** cheatsheet popup |
-| `Tab` | Cycle pane focus between **Sidebar** $\rightarrow$ **Markdown Editor** $\rightarrow$ **Live Preview** |
-| `Ctrl+D` | Return to NvChad Landing Page |
-| `Ctrl+N` | Create a new workspace document |
-| `Ctrl+C` | Quit application |
-| `Esc` | Close modal / Return to Normal mode / Clear search |
+```bash
+# example: macOS on Apple Silicon (replace X.Y.Z with the release version)
+tar -xzf tsuzuri_X.Y.Z_darwin_arm64.tar.gz
+sudo mv tsuzuri /usr/local/bin/
+```
 
-#### Sidebar Navigation & Nested Tree
-| Shortcut | Description |
-| :--- | :--- |
-| `/` | Focus search input to filter documents in real-time |
-| `j` / `k` or `↓` / `↑` | Move selection cursor up / down |
-| `Enter` / `r` / `e` | Inline edit / rename selected document |
-| `z` / `Space` / `l` / `h` | Expand / collapse nested folder or sub-pages |
-| `a` | Add sub-page under currently selected page |
-| `n` | Create new top-level page |
-| `d` / `x` | Delete selected page |
+Builds are published for Linux, macOS and Windows on `amd64` and `arm64`. Verify downloads against `checksums.txt`.
 
-#### Markdown Editor & Live Preview
-| Shortcut | Description |
-| :--- | :--- |
-| `i` | Enter Vim Insert mode (live compiles to Preview on keystroke) |
-| `Esc` | Return to Normal mode |
-| `:` | Open Vim Command mode (`:w`, `:q`, `:wq`, `:q!`) |
-| `j` / `k` (Preview) | Scroll preview down / up line by line |
-| `d` / `u` (Preview) | Half-page scroll down / up |
-| `g` / `G` (Preview) | Jump to top / bottom |
+### With Go
 
-### Key Features
-- **React-Style Component Architecture**: Clean separation between root container (`<App/>`), header (`<Header/>`), sidebar (`<Sidebar/>`), editor (`<Body/>`), and domain state (`core.Store`).
-- **Vim Modal Text Editor**: Full support for `NORMAL`, `INSERT` (press `i`), and `COMMAND` (press `:`) modes including Vim commands (`:w`, `:q`, `:wq`, `:q!`).
-- **Dynamic Document Workspace**: Create, rename, delete, and switch between workspace documents dynamically.
-- **Production Hardened**: Guarded slice indexing, bounds-checked line math, small terminal window protection, and zero-panic error handling.
-- **Gruvbox Dark Aesthetic Palette**: Styled with curated terminal colors via Lip Gloss.
+```bash
+go install github.com/jaisuriya-11/tsuzuri/cmd/tsuzuri@latest
+```
 
----
-
-## 📦 Install
-
-### Prerequisites
-- **Go 1.22** or higher installed on your machine.
-
-### Option 1: Build from Source
-Clone the repository and build the executable binary:
+### From source
 
 ```bash
 git clone https://github.com/jaisuriya-11/tsuzuri.git
 cd tsuzuri
-make build
+make build        # binary at ./bin/tsuzuri
 ```
 
-The compiled binary will be placed at `./bin/tsuzuri`.
+Requires the Go version listed in `go.mod`. Icons need a [Nerd Font](https://www.nerdfonts.com/) in your terminal.
 
-### Option 2: Go Install
-Install directly using the Go toolchain:
+## Usage
 
 ```bash
-go install tsuzuri/cmd/tsuzuri@latest
+tsuzuri                      # open the current directory as the workspace
+tsuzuri --dir ~/notes        # open a specific folder (created if missing)
+TSUZURI_WORKSPACE=~/notes tsuzuri
+tsuzuri --version
 ```
 
----
+The workspace is picked in this order: `--dir`, then `$TSUZURI_WORKSPACE`, then the current directory. Hidden files and folders (names starting with `.`) are not shown. The debug log goes to your user cache directory (for example `~/Library/Caches/tsuzuri/tsuzuri.log` on macOS, `~/.cache/tsuzuri/tsuzuri.log` on Linux), never into your notes.
 
-## 🚀 Usage
+### How pages map to files
 
-### Running Tsuzuri
-
-Start the interactive terminal workspace:
-
-```bash
-./bin/tsuzuri
+```text
+notes/
+├── Inbox.md                 page
+├── Project.md               page with sub-pages…
+├── Project/                 …which live in this folder
+│   ├── Roadmap.md
+│   └── Meeting notes.md
+└── Archive/                 plain folder
+    └── 2025.md
 ```
 
-Or run directly with Go without compiling:
+Renaming a page renames both its file and its sub-page folder. Deleting a page removes its `.md` file; if it had sub-pages, its folder stays as a plain folder so nothing is lost.
+
+## Keybindings
+
+Press `Space` `h` or `?` inside the app for the cheatsheet.
+
+### Dashboard
+
+| Key | Action |
+| :-- | :-- |
+| `n` | New page |
+| `f` / `Tab` | Open workspace (focus sidebar) |
+| `1`–`9` | Open recent page |
+| `j` / `k` | Move selection |
+| `Enter` | Run selected action |
+| `q` / `Ctrl+C` | Quit |
+
+### Global
+
+| Key | Action |
+| :-- | :-- |
+| `Tab` | Cycle focus: sidebar → editor → preview |
+| `Ctrl+B` | Toggle sidebar |
+| `Ctrl+N` | New page |
+| `Ctrl+D` | Back to dashboard |
+| `[` / `]` | Previous / next tab |
+| `x` | Close tab (editor, NORMAL mode) |
+| `Space` `h` / `?` | Shortcut cheatsheet |
+| `Ctrl+C` | Quit |
+
+### Sidebar
+
+| Key | Action |
+| :-- | :-- |
+| `j` / `k`, `↓` / `↑` | Move cursor |
+| `Enter` / `l` / `→` | Open page, or expand / collapse a folder |
+| `o` | Open a page that has sub-pages |
+| `h` / `←` | Collapse folder |
+| `z` / `Space` | Toggle expand / collapse |
+| `n` | New top-level page |
+| `a` | New sub-page under selection |
+| `r` / `e` | Rename (`Enter` confirm, `Esc` cancel) |
+| `d` / `x` | Delete |
+| `/` | Search (`Enter` / `Esc` to leave) |
+
+### Editor
+
+| Mode | Key | Action |
+| :-- | :-- | :-- |
+| NORMAL | `i` / `a` | Enter INSERT mode |
+| NORMAL | `:` | Enter COMMAND mode |
+| NORMAL | `j` / `k` | Move cursor |
+| INSERT | `Esc` | Back to NORMAL |
+| COMMAND | `:w` / `:write` | Save (a new page becomes a file here) |
+| COMMAND | `:wq` / `:x` | Save and quit |
+| COMMAND | `:q` / `:quit` / `:q!` | Quit without saving |
+| COMMAND | `Esc` | Cancel |
+
+### Preview
+
+| Key | Action |
+| :-- | :-- |
+| `j` / `k` | Scroll one line |
+| `d` / `u`, `Ctrl+D` / `Ctrl+U` | Half-page down / up |
+| `g` / `G` | Top / bottom |
+| Mouse wheel | Scroll |
+
+## Development
 
 ```bash
+make            # fmt, vet, test, build
+make test
 make run
-# or
-go run ./cmd/tsuzuri
+make snapshot   # local release dry run (needs goreleaser)
 ```
 
----
+Code layout:
 
-## ⌨️ Keybindings
+| Package | Role |
+| :-- | :-- |
+| `cmd/tsuzuri` | Entry point, flags, workspace resolution |
+| `internal/core` | Filesystem-backed page store and app messages (no UI code) |
+| `internal/app` | Root model: layout, focus, keymap, tabs, drafts, modal |
+| `internal/dashboard` | Landing screen |
+| `internal/sidebar` | Page tree, search, inline rename |
+| `internal/content` | Vim editor and tab strip |
+| `internal/preview` | Markdown compiler and preview viewport |
+| `internal/header` | Header bar |
+| `internal/theme` | Colors and styles |
 
-### Global Shortcuts
+### Releasing
 
-| Keybinding | Action |
-| :--- | :--- |
-| `Tab` | Switch focus between Sidebar pane and Editor pane |
-| `Ctrl+N` | Create a new document page |
-| `Ctrl+C` | Exit application |
+Releases are built by [GoReleaser](https://goreleaser.com) in GitHub Actions. Push a semver tag and the workflow publishes binaries, archives and checksums:
 
-### Sidebar Navigation & Actions (Sidebar Focus)
+```bash
+git tag -a v0.1.0 -m "v0.1.0"
+git push origin v0.1.0
+```
 
-| Keybinding | Action |
-| :--- | :--- |
-| `j` / `k` or `↓` / `↑` | Move selection cursor up / down |
-| `Enter` | Enter inline title rename mode for selected document |
-| `n` or `a` | Create a new workspace document |
-| `d` or `x` | Delete selected document |
+## License
 
-### Editor & Vim Modes (Editor Focus)
-
-| Mode | Keybinding | Action |
-| :--- | :--- | :--- |
-| **Normal** | `i` or `a` | Enter **INSERT** mode to begin typing |
-| **Normal** | `:` | Open **COMMAND** prompt (`:w`, `:q`, `:wq`, `:q!`) |
-| **Normal** | `j` / `k` or `↓` / `↑` | Move editor cursor down / up |
-| **Insert** | `Esc` | Return to **NORMAL** mode |
-| **Command** | `Enter` | Execute Vim command (`:w` save, `:q` quit, `:wq` write & quit) |
-| **Command** | `Esc` | Cancel command prompt and return to **NORMAL** mode |
-
----
-
-## 📜 License
-
-This project is licensed under the [MIT License](LICENSE).
+[MIT](LICENSE)
