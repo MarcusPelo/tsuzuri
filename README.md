@@ -33,6 +33,15 @@
 - **96 NvChad themes.** Every base46 theme (onedark, catppuccin, gruvbox, tokyonight, rosepine, nord, everforest, kanagawa, the light ones …). `Space t` opens a picker that previews as you move; the choice is remembered.
 - **Notion-style `/` menu.** In INSERT mode, type `/` at the start of a line (or after a space) to insert headings, lists, to-dos, toggles, callouts, quotes, tables, dividers, code, a new sub-page or a link to another note. Keep typing to filter.
 - **Attach images and files.** `/image`, `/video`, `/audio` and `/file` open your system's file dialog (Finder on macOS, zenity/kdialog on Linux, the Windows file picker). The file is copied into an `assets/` folder next to the note and linked. Over SSH or without a desktop, a built-in browser opens instead (set `TSUZURI_NATIVE_PICKER=0` to always use it).
+- **Page covers.** `/cover` picks a banner image; it's stored as front matter and drawn across the top of the preview as pixel art, Notion-style. Add `icon: ☁️` for a page icon:
+
+  ```markdown
+  ---
+  cover: assets/gcp.png
+  icon: ☁️
+  ---
+  # GCP- ACE
+  ```
 - **Global finder.** `Ctrl+P` (or `f` on the start screen) searches every note from the workspace root down: file names (fuzzy) and the text inside notes, with a preview. `Enter` opens the note in the current tab at the matching line, `Ctrl+T` in a new one.
 - **Notion-style nesting.** A note can have sub-notes: `Project.md` plus a sibling `Project/` folder.
 

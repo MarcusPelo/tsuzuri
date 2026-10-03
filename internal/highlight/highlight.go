@@ -126,7 +126,19 @@ func headingColor(level int, th theme.Theme) lipgloss.Color {
 func Markdown(text string, th theme.Theme) Colors {
 	lines := strings.Split(text, "\n")
 	out := make(Colors, len(lines))
-	for i := 0; i < len(lines); i++ {
+	first := 0
+	if len(lines) > 1 && strings.TrimRight(lines[0], "\r") == "---" {
+		for end := 1; end < len(lines); end++ {
+			if t := strings.TrimRight(lines[end], "\r"); t == "---" || t == "..." {
+				for j := 0; j <= end; j++ {
+					out[j] = frontMatterColors(lines[j], j == 0 || j == end, th)
+				}
+				first = end + 1
+				break
+			}
+		}
+	}
+	for i := first; i < len(lines); i++ {
 		line := lines[i]
 		cols := make([]lipgloss.Color, len([]rune(line)))
 		out[i] = cols
@@ -179,6 +191,21 @@ func Markdown(text string, th theme.Theme) Colors {
 		inline(line, cols, th)
 	}
 	return out
+}
+
+func frontMatterColors(line string, delimiter bool, th theme.Theme) []lipgloss.Color {
+	cols := make([]lipgloss.Color, len([]rune(line)))
+	if delimiter {
+		fill(cols, 0, len(cols), th.GreyFg)
+		return cols
+	}
+	if i := strings.Index(line, ":"); i > 0 {
+		k := runeIdx(line, i)
+		fill(cols, 0, k, th.Red)
+		fill(cols, k, k+1, th.GreyFg)
+		fill(cols, k+1, len(cols), th.Green)
+	}
+	return cols
 }
 
 func inline(line string, cols []lipgloss.Color, th theme.Theme) {

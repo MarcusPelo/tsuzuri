@@ -51,3 +51,35 @@ func TestLocalImagesAreDrawn(t *testing.T) {
 		}
 	}
 }
+
+func TestCoverBannerFromFrontMatter(t *testing.T) {
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	defer lipgloss.SetColorProfile(termenv.Ascii)
+
+	dir := t.TempDir()
+	img := image.NewRGBA(image.Rect(0, 0, 300, 300))
+	f, _ := os.Create(filepath.Join(dir, "cover.png"))
+	_ = png.Encode(f, img)
+	f.Close()
+
+	src := "---\ncover: cover.png\nicon: ☁️\n---\n# GCP- ACE\n"
+	out := preview.CompileIn(src, theme.DefaultTheme(), 50, dir)
+	plain := ansi.Strip(out)
+	if strings.Contains(plain, "cover:") || strings.Contains(plain, "---") {
+		t.Fatalf("front matter must not be shown as text:\n%s", plain)
+	}
+	lines := strings.Split(plain, "\n")
+	for i := 0; i < 8; i++ {
+		if lines[i] != strings.Repeat("▀", 50) {
+			t.Fatalf("banner row %d should span the pane: %q", i, lines[i])
+		}
+	}
+	if !strings.Contains(plain, "☁️") || !strings.Contains(plain, "GCP- ACE") {
+		t.Fatalf("expected icon and heading after the banner:\n%s", plain)
+	}
+
+	meta, body := preview.SplitFrontMatter("---\nnot closed\n# x")
+	if meta != nil || !strings.HasPrefix(body, "---") {
+		t.Fatal("unterminated front matter must be left alone")
+	}
+}

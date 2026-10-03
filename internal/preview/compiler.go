@@ -131,6 +131,9 @@ func CompileIn(input string, th theme.Theme, contentWidth int, baseDir string) s
 	}
 	c := &compiler{st: newStyles(th), width: contentWidth, baseDir: baseDir}
 
+	meta, input := SplitFrontMatter(input)
+	c.header(meta)
+
 	input = htmlCommentRegex.ReplaceAllString(strings.ReplaceAll(input, "\t", "    "), "")
 	lines := strings.Split(input, "\n")
 
@@ -291,6 +294,27 @@ func (c *compiler) codeBlock(lang string, code []string) {
 	box := c.st.codeBox.Width(inner + 2).Render(strings.Join(code, "\n"))
 	c.emit(strings.Split(box, "\n")...)
 	c.blank()
+}
+
+// header draws the page cover banner and icon from front matter.
+func (c *compiler) header(meta map[string]string) {
+	if src := meta["cover"]; src != "" {
+		path, err := resolveImage(strings.Trim(src, "<>"), c.baseDir)
+		var lines []string
+		if err == nil {
+			lines, err = renderCover(path, c.width, c.st.th.Bg)
+		}
+		if err != nil {
+			c.emit(lipgloss.NewStyle().Foreground(c.st.th.Purple).Render("󰋩 cover") + c.st.muted.Render(" ("+err.Error()+")"))
+		} else {
+			c.emit(lines...)
+		}
+		c.blank()
+	}
+	if icon := meta["icon"]; icon != "" {
+		c.emit(" " + icon)
+		c.blank()
+	}
 }
 
 func (c *compiler) image(alt, src string) {

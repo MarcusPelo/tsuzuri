@@ -690,3 +690,27 @@ func TestCopyByDragYankAndVisualMode(t *testing.T) {
 		t.Fatalf("expected 'hel' cut, got %q", got.Content)
 	}
 }
+
+func TestSlashCoverSetsFrontMatter(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("TSUZURI_NATIVE_PICKER", "0")
+	_ = os.MkdirAll(filepath.Join(home, "Downloads"), 0o755)
+	if err := os.WriteFile(filepath.Join(home, "Downloads", "gcp.png"), []byte("png"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	store := newTestStore(t)
+	if _, err := store.SaveAs("", "ace", "# GCP- ACE"); err != nil {
+		t.Fatal(err)
+	}
+	h := newHarness(t, store)
+	h.keys("1")
+	h.keys("o/cover")
+	h.key(tea.KeyEnter)
+	h.key(tea.KeyEnter) // pick gcp.png
+	h.send(tea.KeyMsg{Type: tea.KeyCtrlS})
+	got, _ := store.Get("ace.md")
+	if !strings.HasPrefix(got.Content, "---\ncover: assets/gcp.png\n---\n# GCP- ACE") {
+		t.Fatalf("expected cover front matter, got %q", got.Content)
+	}
+}

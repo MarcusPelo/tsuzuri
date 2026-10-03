@@ -31,6 +31,7 @@ var mediaKinds = map[string]mediaKind{
 	"video": {"video", "Choose a video", []string{".mp4", ".mov", ".webm", ".mkv", ".avi", ".m4v"}, "public.movie"},
 	"audio": {"audio", "Choose an audio file", []string{".mp3", ".wav", ".m4a", ".ogg", ".flac", ".aac"}, "public.audio"},
 	"file":  {"file", "Choose a file", nil, ""},
+	"cover": {"cover", "Choose a cover image", []string{".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"}, "public.image"},
 }
 
 func (k mediaKind) accepts(name string) bool {
@@ -161,6 +162,13 @@ func (m *Model) attachMedia(kind, src string) {
 	link, err := m.store.AttachFile(noteDir, src)
 	if err != nil {
 		m.setError("Could not attach file: " + err.Error())
+		return
+	}
+	if kind == "cover" {
+		m.content.SetFrontMatter("cover", link)
+		m.preview.SetContent(m.content.Value())
+		m.refreshModified()
+		m.setStatus("Cover set to " + link)
 		return
 	}
 	name := strings.TrimSuffix(filepath.Base(src), filepath.Ext(src))

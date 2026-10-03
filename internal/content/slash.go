@@ -38,6 +38,7 @@ var slashItems = []slashItem{
 	{section: "Basic blocks", icon: "\U000f04eb", label: "Table", aliases: "grid", before: "| ", after: " | Column 2 |\n| --- | --- |\n|  |  |", block: true},
 	{section: "Basic blocks", icon: "\U000f0374", label: "Divider", hint: "---", aliases: "hr rule line separator", before: "---\n", block: true},
 	{section: "Basic blocks", icon: "\U000f0337", label: "Link to page", aliases: "mention reference note", action: "link"},
+	{section: "Media", icon: "\U000f0e7c", label: "Cover", hint: "banner", aliases: "banner header hero", action: "media:cover"},
 	{section: "Media", icon: "\U000f02e9", label: "Image", aliases: "picture photo img upload", action: "media:image"},
 	{section: "Media", icon: "\U000f0567", label: "Video", aliases: "movie upload", action: "media:video"},
 	{section: "Media", icon: "\U000f075a", label: "Audio", aliases: "sound music upload", action: "media:audio"},
@@ -186,6 +187,42 @@ func (m *Model) applySlash(it slashItem) tea.Cmd {
 	}
 	ta.EnsureVisible()
 	return nil
+}
+
+// SetFrontMatter sets key: value in the note's leading "---" block,
+// creating the block if needed, and keeps the cursor on the same text.
+func (m *Model) SetFrontMatter(key, value string) {
+	text := m.textarea.Value()
+	row, col := m.textarea.RowCol()
+	lines := strings.Split(text, "\n")
+	entry := key + ": " + value
+	added := 0
+	if len(lines) > 1 && lines[0] == "---" {
+		end := -1
+		for i := 1; i < len(lines); i++ {
+			if lines[i] == "---" {
+				end = i
+				break
+			}
+		}
+		if end > 0 {
+			replaced := false
+			for i := 1; i < end; i++ {
+				if strings.HasPrefix(strings.ToLower(lines[i]), key+":") {
+					lines[i], replaced = entry, true
+				}
+			}
+			if !replaced {
+				lines = append(lines[:end], append([]string{entry}, lines[end:]...)...)
+				added = 1
+			}
+			m.textarea.SetValue(strings.Join(lines, "\n"))
+			m.textarea.SetRowCol(row+added, col)
+			return
+		}
+	}
+	m.textarea.SetValue("---\n" + entry + "\n---\n" + text)
+	m.textarea.SetRowCol(row+3, col)
 }
 
 // InsertText types text at the cursor (used for "Link to page").
