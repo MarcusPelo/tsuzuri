@@ -43,8 +43,8 @@ func TestSidebarComponent(t *testing.T) {
 	if strings.Contains(view, "RECENTS") {
 		t.Errorf("expected view NOT to contain RECENTS header, got %q", view)
 	}
-	if !strings.Contains(view, "Search") {
-		t.Errorf("expected view to contain Search box, got %q", view)
+	if !strings.Contains(view, "Find note") {
+		t.Errorf("expected view to contain the find button, got %q", view)
 	}
 
 	// Test collapsing folder
@@ -103,31 +103,37 @@ func TestSidebarEditableElements(t *testing.T) {
 	}
 }
 
-func TestSidebarSearch(t *testing.T) {
-	th := theme.DefaultTheme()
-	sb := sidebar.New(th)
+func TestSidebarSlashOpensFinderAndClickKeepsFocus(t *testing.T) {
+	sb := sidebar.New(theme.DefaultTheme())
 	sb.SetSize(28, 25)
+	sb.SetPages([]core.Page{
+		{ID: "a.md", Title: "a"},
+		{ID: "b.md", Title: "b"},
+	})
+	sb.SetFocused(true)
 
-	pages := []core.Page{
-		{ID: "p1", Title: "Code Turtle"},
-		{ID: "p2", Title: "Credentials"},
+	_, cmd := sb.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	if cmd == nil {
+		t.Fatal("expected a command from '/'")
 	}
-	sb.SetPages(pages)
-
-	// Press '/' to search
-	sb, _ = sb.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
-	if !sb.IsSearching() {
-		t.Error("expected sidebar to be in searching mode after '/'")
+	if _, ok := cmd().(core.FindRequestMsg); !ok {
+		t.Fatal("expected '/' to request the global finder")
 	}
 
-	// Type 'cred'
-	sb, _ = sb.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'c'}})
-	sb, _ = sb.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
-	sb, _ = sb.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
-	sb, _ = sb.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
-
-	items := sb.VisibleItems()
-	if len(items) != 1 || items[0].Page.Title != "Credentials" {
-		t.Errorf("expected 1 search result 'Credentials', got %v", items)
+	// Rows start at y=3 (title, find button, spacer). Click b.md.
+	sb, cmd = sb.Update(tea.MouseMsg{X: 5, Y: 4, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
+	if cmd == nil {
+		t.Fatal("expected click on a note to open it")
+	}
+	sel, ok := cmd().(core.PageSelectedMsg)
+	if !ok || sel.ID != "b.md" || !sel.KeepFocus {
+		t.Fatalf("expected quiet open of b.md, got %#v", sel)
+	}
+	if p, _ := sb.SelectedPage(); p.ID != "b.md" {
+		t.Fatalf("cursor should follow the click, got %q", p.ID)
+	}
+	sb, _ = sb.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}})
+	if p, _ := sb.SelectedPage(); p.ID != "a.md" {
+		t.Fatalf("keyboard should keep working after a click, got %q", p.ID)
 	}
 }

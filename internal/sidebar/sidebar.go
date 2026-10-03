@@ -2,7 +2,6 @@
 package sidebar
 
 import (
-	"path"
 	"strings"
 
 	"github.com/jaisuriya-11/tsuzuri/internal/core"
@@ -14,7 +13,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// Rows above the tree: workspace title, search field, spacer.
+// Rows above the tree: workspace title, find button, spacer.
 const treeTop = 3
 
 // TreeItem represents a flattened visible node in the sidebar tree.
@@ -40,8 +39,6 @@ type Model struct {
 	focused     bool
 	renaming    bool
 	renameInput textinput.Model
-	searching   bool
-	searchInput textinput.Model
 	workspace   string
 	activeID    string
 	modified    map[string]bool
@@ -56,18 +53,12 @@ func New(th theme.Theme) Model {
 	ti.Placeholder = "name"
 	ti.CharLimit = 128
 
-	si := textinput.New()
-	si.Prompt = ""
-	si.Placeholder = "Search notes"
-	si.CharLimit = 64
-
 	return Model{
 		theme:       th,
 		byID:        map[string]core.Page{},
 		expanded:    map[string]bool{},
 		modified:    map[string]bool{},
 		renameInput: ti,
-		searchInput: si,
 		workspace:   "workspace",
 	}
 }
@@ -99,16 +90,8 @@ func (m *Model) SetModified(ids map[string]bool) {
 
 func (m Model) isExpanded(id string) bool { return m.expanded[id] }
 
-func (m Model) query() string {
-	return strings.ToLower(strings.TrimSpace(m.searchInput.Value()))
-}
-
 // VisibleItems constructs the flattened, filtered list of rows displayed.
 func (m Model) VisibleItems() []TreeItem {
-	if q := m.query(); q != "" {
-		return m.searchResults(q)
-	}
-
 	children := make(map[string][]core.Page)
 	var roots []core.Page
 	for _, p := range m.pages {
@@ -140,29 +123,6 @@ func (m Model) VisibleItems() []TreeItem {
 		}
 	}
 	walk(roots, 0, nil)
-	return items
-}
-
-// searchResults lists every note whose path contains all query terms.
-func (m Model) searchResults(q string) []TreeItem {
-	terms := strings.Fields(q)
-	var items []TreeItem
-	for _, p := range m.pages {
-		if p.IsFolder {
-			continue
-		}
-		hay := strings.ToLower(p.ID + " " + p.Title)
-		ok := true
-		for _, t := range terms {
-			if !strings.Contains(hay, t) {
-				ok = false
-				break
-			}
-		}
-		if ok {
-			items = append(items, TreeItem{Page: p})
-		}
-	}
 	return items
 }
 
@@ -220,8 +180,6 @@ func (m *Model) SetSelectedID(id string) {
 func (m *Model) SetFocused(focused bool) {
 	m.focused = focused
 	if !focused {
-		m.searching = false
-		m.searchInput.Blur()
 		m.renaming = false
 		m.renameInput.Blur()
 	}
@@ -230,11 +188,8 @@ func (m *Model) SetFocused(focused bool) {
 // IsRenaming returns whether inline renaming is active.
 func (m Model) IsRenaming() bool { return m.renaming }
 
-// IsSearching returns whether the search field has focus.
-func (m Model) IsSearching() bool { return m.searching }
-
-// IsBusy reports whether the explorer is capturing typed text.
-func (m Model) IsBusy() bool { return m.renaming || m.searching }
+// IsBusy reports whether the explorer is capturing typed text (renaming).
+func (m Model) IsBusy() bool { return m.renaming }
 
 // SelectedPage returns the currently selected page item safely.
 func (m Model) SelectedPage() (core.Page, bool) {
@@ -270,26 +225,17 @@ func (m *Model) StartRenaming() tea.Cmd {
 	return m.renameInput.Focus()
 }
 
-// StartSearch focuses the search field.
-func (m *Model) StartSearch() tea.Cmd {
-	m.searching = true
-	m.cursor = 0
-	m.offset = 0
-	return m.searchInput.Focus()
-}
-
-func (m *Model) stopSearch(clear bool) {
-	m.searching = false
-	m.searchInput.Blur()
-	if clear {
-		m.searchInput.SetValue("")
-	}
-	m.ensureVisible()
-}
-
 func selectCmd(id string) tea.Cmd {
 	return func() tea.Msg { return core.PageSelectedMsg{ID: id} }
 }
+
+// openQuietly opens a note but leaves keyboard focus in the explorer, like a
+// single click in VSCode's explorer.
+func openQuietly(id string) tea.Cmd {
+	return func() tea.Msg { return core.PageSelectedMsg{ID: id, KeepFocus: true} }
+}
+
+func findCmd() tea.Msg { return core.FindRequestMsg{} }
 
 // activate is nvim-tree's "edit" action: toggle a folder, open a note.
 func (m *Model) activate(item TreeItem) tea.Cmd {
@@ -350,44 +296,6 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		return m, cmd
 	}
 
-	if m.searching {
-		if isKey {
-			items := m.VisibleItems()
-			switch key.String() {
-			case "esc":
-				m.stopSearch(true)
-				return m, nil
-			case "enter":
-				m.clampCursor()
-				var open tea.Cmd
-				if m.cursor < len(items) {
-					open = selectCmd(items[m.cursor].Page.ID)
-				}
-				id := ""
-				if open != nil {
-					id = items[m.cursor].Page.ID
-				}
-				m.stopSearch(true)
-				if id != "" {
-					m.SetSelectedID(id)
-				}
-				return m, open
-			case "down", "ctrl+n", "ctrl+j":
-				m.cursor++
-				m.ensureVisible()
-				return m, nil
-			case "up", "ctrl+p", "ctrl+k":
-				m.cursor--
-				m.ensureVisible()
-				return m, nil
-			}
-		}
-		m.searchInput, cmd = m.searchInput.Update(msg)
-		m.cursor = 0
-		m.ensureVisible()
-		return m, cmd
-	}
-
 	if !isKey {
 		return m, nil
 	}
@@ -400,8 +308,8 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	}
 
 	switch key.String() {
-	case "/":
-		return m, m.StartSearch()
+	case "/", "f":
+		return m, findCmd
 
 	case "up", "k":
 		m.cursor--
@@ -488,7 +396,7 @@ func (m Model) handleMouse(msg tea.MouseMsg) (Model, tea.Cmd) {
 		return m, nil
 	}
 	if msg.Y == 1 {
-		return m, m.StartSearch()
+		return m, findCmd
 	}
 	if msg.Y < treeTop {
 		return m, nil
@@ -504,11 +412,6 @@ func (m Model) handleMouse(msg tea.MouseMsg) (Model, tea.Cmd) {
 	}
 	m.cursor = idx
 	item := items[idx]
-	if m.searching || m.query() != "" {
-		m.stopSearch(true)
-		m.SetSelectedID(item.Page.ID)
-		return m, selectCmd(item.Page.ID)
-	}
 	// Clicking the chevron (or a folder anywhere) toggles; clicking a note opens it.
 	arrowX := 1 + item.Level*2
 	if item.HasChildren && (item.Page.IsFolder || msg.X <= arrowX+1) {
@@ -516,7 +419,10 @@ func (m Model) handleMouse(msg tea.MouseMsg) (Model, tea.Cmd) {
 		m.ensureVisible()
 		return m, nil
 	}
-	return m, m.activate(item)
+	if item.HasChildren || item.Page.IsFolder {
+		return m, m.activate(item)
+	}
+	return m, openQuietly(item.Page.ID)
 }
 
 // displayName shows real filenames, like nvim-tree.
@@ -542,23 +448,12 @@ func (m Model) View() string {
 	title := bg.Foreground(th.Blue).Bold(true).Render(" 󰉖 " + ui.Truncate(strings.ToUpper(m.workspace), w-4))
 	rows = append(rows, ui.FitLine(title, w, bg))
 
-	// 2. Search field: a single painted line, so it can never misalign.
+	// 2. Find button (opens the global finder).
 	fieldW := max(w-2, 4)
 	field := lipgloss.NewStyle().Background(th.Bg2)
-	var inner string
-	if m.searching {
-		m.searchInput.Width = max(fieldW-5, 1)
-		m.searchInput.TextStyle = field.Foreground(th.Fg)
-		m.searchInput.PlaceholderStyle = field.Foreground(th.GreyFg)
-		m.searchInput.Cursor.Style = lipgloss.NewStyle().Foreground(th.Blue)
-		inner = field.Foreground(th.Blue).Render(" 󰍉 ") + m.searchInput.View()
-	} else if q := m.searchInput.Value(); q != "" {
-		inner = field.Foreground(th.Blue).Render(" 󰍉 ") + field.Foreground(th.Fg).Render(ui.Truncate(q, fieldW-5))
-	} else {
-		left := field.Foreground(th.GreyFg).Render(" 󰍉 Search notes")
-		hint := field.Foreground(th.Grey).Render("/ ")
-		inner = left + field.Render(strings.Repeat(" ", max(fieldW-lipgloss.Width(left)-lipgloss.Width(hint), 0))) + hint
-	}
+	left := field.Foreground(th.GreyFg).Render(" 󰍉 Find note")
+	hint := field.Foreground(th.Grey).Render("/ ")
+	inner := left + field.Render(strings.Repeat(" ", max(fieldW-lipgloss.Width(left)-lipgloss.Width(hint), 0))) + hint
 	rows = append(rows, bg.Render(" ")+ui.FitLine(inner, fieldW, field)+bg.Render(" "))
 	rows = append(rows, "")
 
@@ -567,9 +462,6 @@ func (m Model) View() string {
 	h := m.treeHeight()
 	if len(items) == 0 {
 		msg := "Empty workspace — press n"
-		if m.query() != "" {
-			msg = "No matching notes"
-		}
 		rows = append(rows, bg.Foreground(th.GreyFg).Italic(true).Render("  "+ui.Truncate(msg, w-3)))
 	}
 	end := min(m.offset+h, len(items))
@@ -596,7 +488,7 @@ func (m Model) renderItem(item TreeItem, selected bool) string {
 	b.WriteString(base.Render(" "))
 
 	// Indent guides.
-	if m.query() == "" {
+	{
 		for i := 0; i < item.Level; i++ {
 			switch {
 			case i < item.Level-1 && i < len(item.Guides) && item.Guides[i]:
@@ -649,9 +541,6 @@ func (m Model) renderItem(item TreeItem, selected bool) string {
 		arrow = "  "
 		icon = markdownIcon
 	}
-	if m.query() != "" {
-		arrow = ""
-	}
 	if item.Page.ID == m.activeID {
 		nameStyle = nameStyle.Bold(true).Foreground(th.Green)
 	} else if selected && m.focused {
@@ -675,19 +564,7 @@ func (m Model) renderItem(item TreeItem, selected bool) string {
 	}
 
 	avail := m.width - used
-	label := name
-	if m.query() != "" {
-		if dir := path.Dir(item.Page.ID); dir != "." {
-			label = name + "  " + dir
-		}
-	}
-	label = ui.Truncate(label, max(avail, 1))
-	if m.query() != "" && len(label) > len(name) && strings.HasPrefix(label, name) {
-		b.WriteString(nameStyle.Render(name))
-		b.WriteString(base.Foreground(th.GreyFg).Render(label[len(name):]))
-	} else {
-		b.WriteString(nameStyle.Render(label))
-	}
+	b.WriteString(nameStyle.Render(ui.Truncate(name, max(avail, 1))))
 	pad := m.width - lipgloss.Width(b.String()) - lipgloss.Width(right)
 	if pad > 0 {
 		b.WriteString(base.Render(strings.Repeat(" ", pad)))

@@ -1,10 +1,8 @@
-// Package content renders the Markdown editor pane (<Body/>): a winbar with the
-// note's path and a Vim-style editor underneath.
+// Package content renders the Markdown editor pane (<Body/>), a Vim-style
+// editor. The file name lives in the tabline only.
 package content
 
 import (
-	"strings"
-
 	"github.com/jaisuriya-11/tsuzuri/internal/core"
 	"github.com/jaisuriya-11/tsuzuri/internal/textarea"
 	"github.com/jaisuriya-11/tsuzuri/internal/theme"
@@ -15,9 +13,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
-
-// winbarHeight is the breadcrumb row above the text.
-const winbarHeight = 1
 
 // Model represents the Content component state.
 type Model struct {
@@ -63,7 +58,7 @@ func (m *Model) SetSize(w, h int) {
 	m.width = max(w, 0)
 	m.height = max(h, 0)
 	m.textarea.SetWidth(max(w-1, 10))
-	m.textarea.SetHeight(max(h-winbarHeight, 1))
+	m.textarea.SetHeight(max(h, 1))
 }
 
 // SetPage loads a document into the editor. draft marks an unsaved buffer
@@ -156,6 +151,13 @@ func (m *Model) EnterInsert() tea.Cmd {
 		return nil
 	}
 	return m.focusTextarea()
+}
+
+// ExitInsert returns to NORMAL mode (e.g. when focus leaves the editor).
+func (m *Model) ExitInsert() {
+	if m.mode == ModeInsert {
+		m.mode = ModeNormal
+	}
 }
 
 func (m *Model) enterInsert() tea.Cmd {
@@ -319,33 +321,11 @@ func (m Model) handleMouse(msg tea.MouseMsg) (Model, tea.Cmd) {
 		m.textarea.ScrollBy(3)
 		return m, nil
 	case tea.MouseButtonLeft:
-		if msg.Action == tea.MouseActionPress && msg.Y >= winbarHeight {
-			m.textarea.ClickAt(msg.X, msg.Y-winbarHeight)
+		if msg.Action == tea.MouseActionPress {
+			m.textarea.ClickAt(msg.X, msg.Y)
 		}
 	}
 	return m, nil
-}
-
-// winbar renders the breadcrumb row: folder › folder › file.md.
-func (m Model) winbar() string {
-	th := m.theme
-	sep := lipgloss.NewStyle().Foreground(th.Grey).Render(" › ")
-	dirStyle := lipgloss.NewStyle().Foreground(th.GreyFg2)
-	fileStyle := lipgloss.NewStyle().Foreground(th.Fg).Bold(true)
-	icon := lipgloss.NewStyle().Foreground(th.NordBlue).Render(" ")
-
-	var parts []string
-	if m.draft {
-		name := m.page.Title
-		parts = append(parts, icon+fileStyle.Render(name)+lipgloss.NewStyle().Foreground(th.Yellow).Render("  unsaved"))
-	} else {
-		segs := strings.Split(m.page.ID, "/")
-		for _, d := range segs[:len(segs)-1] {
-			parts = append(parts, dirStyle.Render(d))
-		}
-		parts = append(parts, icon+fileStyle.Render(segs[len(segs)-1]))
-	}
-	return " " + strings.Join(parts, sep)
 }
 
 // View renders the editor at exactly width × height.
@@ -368,6 +348,5 @@ func (m Model) View() string {
 		return ui.Fit(lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, block), m.width, m.height, plain)
 	}
 
-	body := ui.Fit(m.textarea.View(), m.width, m.height-winbarHeight, plain)
-	return ui.FitLine(m.winbar(), m.width, plain) + "\n" + body
+	return ui.Fit(m.textarea.View(), m.width, m.height, plain)
 }

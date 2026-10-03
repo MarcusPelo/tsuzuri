@@ -124,6 +124,8 @@ func assertFrame(t *testing.T, v string) {
 }
 
 // find returns the screen position of the first occurrence of text.
+func stripped(s string) string { return ansi.Strip(s) }
+
 func find(t *testing.T, view, text string) (int, int) {
 	t.Helper()
 	for y, l := range strings.Split(view, "\n") {
@@ -287,7 +289,7 @@ func TestMouseTabsAndPanes(t *testing.T) {
 	// Clicking a tab switches to it.
 	x, _ = find(t, strings.Split(v, "\n")[0], "one.md")
 	h.click(x, 0)
-	if v = h.view(); !strings.Contains(strings.Split(v, "\n")[2], "one") {
+	if v = h.view(); !strings.Contains(strings.Split(v, "\n")[1], "1 one") {
 		t.Fatalf("expected one.md active after clicking its tab:\n%s", v)
 	}
 
@@ -386,5 +388,75 @@ func TestKeymapModalAndSmallScreens(t *testing.T) {
 				break
 			}
 		}
+	}
+}
+
+func TestFinderFromHomeOpensInCurrentBuffer(t *testing.T) {
+	store := newTestStore(t)
+	for _, n := range []string{"alpha", "beta", "gamma"} {
+		if _, err := store.SaveAs("notes", n, n+" text"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	h := newHarness(t, store)
+
+	// Find from the home screen is a modal over the home screen.
+	h.keys("f")
+	v := h.view()
+	if !strings.Contains(v, "Find Note") || !strings.Contains(v, "HOME") {
+		t.Fatalf("expected finder over the home screen:\n%s", v)
+	}
+	h.keys("bta") // fuzzy: b-e-t-a
+	h.key(tea.KeyEnter)
+	v = h.view()
+	if !strings.Contains(strings.Split(v, "\n")[0], "beta.md") || strings.Contains(v, "Find Note") {
+		t.Fatalf("expected beta.md open and the finder closed:\n%s", v)
+	}
+
+	// Ctrl+P from the editor replaces the (clean) current tab.
+	h.send(tea.KeyMsg{Type: tea.KeyCtrlP})
+	h.keys("gamma")
+	h.key(tea.KeyEnter)
+	tabs := strings.Split(h.view(), "\n")[0]
+	if !strings.Contains(tabs, "gamma.md") || strings.Contains(tabs, "beta.md") {
+		t.Fatalf("expected gamma.md to replace beta.md in the same tab: %q", tabs)
+	}
+
+	// A dirty tab is never replaced.
+	h.keys("A!")
+	h.key(tea.KeyEsc)
+	h.send(tea.KeyMsg{Type: tea.KeyCtrlP})
+	h.keys("alpha")
+	h.key(tea.KeyEnter)
+	tabs = strings.Split(h.view(), "\n")[0]
+	if !strings.Contains(tabs, "gamma.md") || !strings.Contains(tabs, "alpha.md") {
+		t.Fatalf("expected dirty gamma.md kept next to alpha.md: %q", tabs)
+	}
+
+	// Esc closes the finder without changing anything.
+	h.send(tea.KeyMsg{Type: tea.KeyCtrlP})
+	h.key(tea.KeyEsc)
+	if strings.Contains(h.view(), "Find Note") {
+		t.Fatal("Esc should close the finder")
+	}
+}
+
+func TestCtrlBFocusesExplorerFromInsertMode(t *testing.T) {
+	store := newTestStore(t)
+	for _, n := range []string{"a", "b"} {
+		if _, err := store.SaveAs("", n, n); err != nil {
+			t.Fatal(err)
+		}
+	}
+	h := newHarness(t, store)
+	h.keys("n") // draft in INSERT mode
+	h.send(tea.KeyMsg{Type: tea.KeyCtrlB})
+	if v := h.view(); !strings.Contains(v, "EXPLORER") || strings.Contains(v, "INSERT") {
+		t.Fatalf("expected explorer focus after Ctrl+B:\n%s", v)
+	}
+	h.keys("j")
+	h.key(tea.KeyEnter)
+	if tabs := strings.Split(h.view(), "\n")[0]; !strings.Contains(tabs, "b.md") {
+		t.Fatalf("expected tree keys to work after Ctrl+B: %q", tabs)
 	}
 }

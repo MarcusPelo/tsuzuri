@@ -25,8 +25,8 @@ func TestContentComponent(t *testing.T) {
 	c.SetPage(core.Page{ID: "notes/Notes.md", Title: "Notes", Content: "Hello world"})
 
 	view := c.View()
-	if !strings.Contains(view, "Notes.md") || !strings.Contains(view, "notes") {
-		t.Errorf("expected breadcrumb with folder and file, got %q", view)
+	if strings.Contains(view, "Notes.md") || !strings.Contains(view, "Hello world") {
+		t.Errorf("expected only the text (no file name row), got %q", view)
 	}
 	if c.ModeString() != "NORMAL" {
 		t.Errorf("expected NORMAL mode, got %q", c.ModeString())

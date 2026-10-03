@@ -59,6 +59,7 @@ type Model struct {
 
 	confirm  *confirmDialog
 	saveAs   *saveAsDialog
+	finder   *finder
 	quitting bool // "Save All" before quitting is in progress
 
 	status    string
@@ -182,13 +183,18 @@ func (m *Model) movePane(delta int, wrap bool) tea.Cmd {
 	return m.focusPane(ps[i])
 }
 
+// toggleSidebar is Ctrl+B: show and focus the explorer, or hide it when it
+// already has focus. Works from every editor mode.
 func (m *Model) toggleSidebar() tea.Cmd {
-	m.sidebarOpen = !m.sidebarOpen
-	m.updateLayout()
-	if !m.sidebarOpen && m.focus == focusSidebar {
+	if m.sidebarOpen && m.focus == focusSidebar && m.viewMode == viewModeWorkspace {
+		m.sidebarOpen = false
+		m.updateLayout()
 		return m.focusPane(focusEditor)
 	}
-	return nil
+	if m.content.Mode() == content.ModeInsert {
+		m.content.ExitInsert()
+	}
+	return m.focusPane(focusSidebar)
 }
 
 func (m *Model) togglePreview() tea.Cmd {
@@ -203,10 +209,7 @@ func (m *Model) togglePreview() tea.Cmd {
 	return nil
 }
 
-func (m *Model) startFind() tea.Cmd {
-	cmd := m.focusPane(focusSidebar)
-	return tea.Batch(cmd, m.sidebar.StartSearch())
-}
+func (m *Model) startFind() tea.Cmd { return m.openFinder() }
 
 func (m *Model) goHome() {
 	m.stashActive()
@@ -242,6 +245,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
+	if m.finder != nil {
+		return m, m.finder.update(&m, msg)
+	}
 	if m.showKeymap {
 		switch msg := msg.(type) {
 		case tea.KeyMsg:
@@ -261,7 +267,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	switch msg := msg.(type) {
 	case core.PageSelectedMsg:
+		if msg.KeepFocus {
+			keep := m.focus
+			m.openFile(msg.ID)
+			return m, m.focusPane(keep)
+		}
 		return m, m.openFile(msg.ID)
+	case core.FindRequestMsg:
+		return m, m.openFinder()
 	case core.PageCreatedMsg:
 		return m, m.newDraft(msg.Page.ParentID)
 	case core.PageUpdatedMsg:
@@ -400,7 +413,7 @@ func (m *Model) handleKey(k tea.KeyMsg) tea.Cmd {
 		return m.newDraft(m.sidebar.ContextParentID())
 	case key.Matches(k, m.keys.ToggleSidebar):
 		return m.toggleSidebar()
-	case key.Matches(k, m.keys.Find) && !sidebarBusy:
+	case key.Matches(k, m.keys.Find):
 		return m.startFind()
 	}
 
@@ -669,6 +682,9 @@ func (m Model) View() string {
 		screen = ui.Overlay(screen, box, x, y)
 	case m.confirm != nil:
 		box, x, y := m.confirm.view(m.theme, m.width, m.height)
+		screen = ui.Overlay(screen, box, x, y)
+	case m.finder != nil:
+		box, x, y := m.finder.view(&m)
 		screen = ui.Overlay(screen, box, x, y)
 	case m.showKeymap:
 		box := RenderKeymapModal(m.theme, m.width, m.height)

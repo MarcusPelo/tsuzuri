@@ -1,6 +1,7 @@
 package preview_test
 
 import (
+	"github.com/charmbracelet/x/ansi"
 	"strings"
 	"testing"
 
@@ -44,11 +45,11 @@ Here is **bold**, *italic*, ` + "`inline_code`" + `, and [Link](https://charm.sh
 	if !strings.Contains(compiled, "󰄱") {
 		t.Errorf("expected unchecked checkbox icon '󰄱', got %q", compiled)
 	}
-	if !strings.Contains(compiled, "󰄳") {
-		t.Errorf("expected checked checkbox icon '󰄳', got %q", compiled)
+	if !strings.Contains(compiled, "\U000f0132") {
+		t.Errorf("expected checked checkbox icon, got %q", compiled)
 	}
-	if !strings.Contains(compiled, "•") {
-		t.Errorf("expected bullet point icon '•', got %q", compiled)
+	if !strings.Contains(compiled, "●") {
+		t.Errorf("expected bullet point icon, got %q", compiled)
 	}
 	if !strings.Contains(compiled, "go") {
 		t.Errorf("expected code block language badge 'go', got %q", compiled)
@@ -76,5 +77,49 @@ func TestPreviewComponent(t *testing.T) {
 	}
 	if p.ScrollStatus() != "Top" {
 		t.Errorf("expected initial scroll status 'Top', got %q", p.ScrollStatus())
+	}
+}
+
+func TestCompilerRegressions(t *testing.T) {
+	th := theme.DefaultTheme()
+	src := `<div align="center">
+
+### ~ Title ~
+
+</div>
+
+<p align="center">
+  <a href="https://x/ci"><img src="https://x/badge.svg" alt="CI"></a>
+</p>
+
+**Tsuzuri** (綴り — *spelling*) is a notebook. See [Bubble Tea](https://github.com/charmbracelet/bubbletea) and more words to force wrapping across several lines of output.
+
+| Key | Action |
+| :-- | :-- |
+| ` + "`n`" + ` | New note |
+`
+	out := preview.Compile(src, th, 40)
+	plain := ansi.Strip(out)
+
+	if strings.Contains(plain, "38;2;") || strings.Contains(plain, "[0m") {
+		t.Fatalf("raw escape codes leaked into output:\n%s", plain)
+	}
+	for _, bad := range []string{"<div", "</div>", "<p", "<a ", "<img", "](https://"} {
+		if strings.Contains(plain, bad) {
+			t.Errorf("expected %q to be rendered, not shown raw:\n%s", bad, plain)
+		}
+	}
+	for _, want := range []string{"Tsuzuri", "spelling", "Bubble Tea", "CI", "New note", "┌"} {
+		if !strings.Contains(plain, want) {
+			t.Errorf("missing %q in:\n%s", want, plain)
+		}
+	}
+	for _, l := range strings.Split(out, "\n") {
+		if w := ansi.StringWidth(l); w > 40 {
+			t.Errorf("line wider than the pane (%d): %q", w, ansi.Strip(l))
+		}
+	}
+	if strings.Contains(plain, "\n\n\n") {
+		t.Errorf("expected blank lines collapsed:\n%s", plain)
 	}
 }

@@ -43,9 +43,9 @@ func (m *Model) SetSize(w, h int) {
 	m.width = max(w, 0)
 	m.height = max(h, 0)
 
-	// One column of left padding plus the winbar row.
+	// One column of padding on each side.
 	m.viewport.Width = max(w-2, 10)
-	m.viewport.Height = max(h-1, 1)
+	m.viewport.Height = max(h, 1)
 	m.ready = true
 	m.recompile()
 }
@@ -152,25 +152,17 @@ func (m Model) View() string {
 	th := m.theme
 	plain := lipgloss.NewStyle()
 
-	label := lipgloss.NewStyle().Foreground(th.Yellow).Render(" 󰈈 ") +
-		lipgloss.NewStyle().Foreground(th.GreyFg2).Render("Preview")
-	if m.pageID != "" {
-		pos := lipgloss.NewStyle().Foreground(th.GreyFg).Render(m.ScrollStatus() + " ")
-		gap := m.width - lipgloss.Width(label) - lipgloss.Width(pos)
-		label += strings.Repeat(" ", max(gap, 1)) + pos
-	}
-
 	var body string
 	if m.pageID == "" {
 		msg := lipgloss.NewStyle().Foreground(th.GreyFg).Render("Nothing to preview")
-		body = lipgloss.Place(m.width, m.height-1, lipgloss.Center, lipgloss.Center, msg)
+		body = lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, msg)
 	} else {
-		body = ui.Fit(m.viewport.View(), m.width-2, m.height-1, plain)
+		body = ui.Fit(m.viewport.View(), m.width-2, m.height, plain)
 		lines := strings.Split(body, "\n")
 		for i, l := range lines {
 			lines[i] = " " + l + " "
 		}
 		body = strings.Join(lines, "\n")
 	}
-	return ui.FitLine(label, m.width, plain) + "\n" + ui.Fit(body, m.width, m.height-1, plain)
+	return ui.Fit(body, m.width, m.height, plain)
 }

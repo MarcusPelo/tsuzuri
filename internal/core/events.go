@@ -1,9 +1,14 @@
 package core
 
-// PageSelectedMsg is emitted by Sidebar when the user selects a page.
+// PageSelectedMsg asks to open a page. KeepFocus leaves keyboard focus where
+// it is (a mouse click in the explorer) instead of moving it to the editor.
 type PageSelectedMsg struct {
-	ID string
+	ID        string
+	KeepFocus bool
 }
+
+// FindRequestMsg opens the global note finder.
+type FindRequestMsg struct{}
 
 // PageCreatedMsg is emitted when a new page is created.
 type PageCreatedMsg struct {

@@ -279,28 +279,7 @@ func (m *Model) cmdline() string {
 		return ui.FitLine(lipgloss.NewStyle().Foreground(fg).Render(m.status), m.width, plain)
 	}
 	if m.leaderPending {
-		return ui.FitLine(lipgloss.NewStyle().Foreground(th.Blue).Render("SPC")+
-			lipgloss.NewStyle().Foreground(th.GreyFg2).Render("  e explorer · f find · n new · x close · p preview · d home · h keymaps"), m.width, plain)
+		return ui.FitLine(lipgloss.NewStyle().Foreground(th.Blue).Render("<Space>"), m.width, plain)
 	}
-	hint := m.contextHint()
-	return ui.FitLine(lipgloss.NewStyle().Foreground(th.GreyFg).Render(hint), m.width, plain)
-}
-
-func (m *Model) contextHint() string {
-	if m.viewMode == viewModeDashboard {
-		return "j/k move · Enter select · ? keymaps"
-	}
-	switch m.focus {
-	case focusSidebar:
-		return "Enter open · a new sub-note · n new · r rename · d delete · / search · ? keymaps"
-	case focusPreview:
-		return "j/k scroll · g/G top/bottom · Tab next pane · ? keymaps"
-	}
-	if m.activeBuffer() == nil {
-		return "Ctrl+N new note · Ctrl+P find · Ctrl+B explorer · ? keymaps"
-	}
-	if m.content.Mode() == content.ModeInsert {
-		return "Esc normal mode · Ctrl+S save"
-	}
-	return "i insert · :w save · Ctrl+S save · [ ] switch tab · Space x close · ? keymaps"
+	return ui.FitLine("", m.width, plain)
 }
