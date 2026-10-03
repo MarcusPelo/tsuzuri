@@ -7,6 +7,7 @@ import (
 	"github.com/jaisuriya-11/tsuzuri/internal/textarea"
 	"github.com/jaisuriya-11/tsuzuri/internal/theme"
 	"github.com/jaisuriya-11/tsuzuri/internal/ui"
+	"regexp"
 
 	"github.com/charmbracelet/bubbles/cursor"
 	"github.com/charmbracelet/bubbles/textinput"
@@ -184,6 +185,24 @@ func (m *Model) enterInsert() tea.Cmd {
 
 func (m *Model) halfPage() int { return max(m.textarea.Height()/2, 1) }
 
+// listItem matches Markdown list and to-do lines, which Tab nests.
+var listItem = regexp.MustCompile(`^\s*([-*+]|\d+[.)])\s`)
+
+// indent handles Tab / Shift+Tab in INSERT mode: list lines are nested or
+// un-nested as a whole; elsewhere Tab inserts two spaces.
+func (m *Model) indent(in bool) {
+	const width = 2
+	switch {
+	case !in:
+		m.textarea.OutdentLine(width)
+	case listItem.MatchString(m.textarea.CurrentLine()):
+		m.textarea.IndentLine(width)
+	default:
+		m.textarea.InsertString("  ")
+	}
+	m.textarea.EnsureVisible()
+}
+
 // GotoLine puts the cursor on 1-based line n, scrolled into view.
 func (m *Model) GotoLine(n int) { m.textarea.GotoLine(n) }
 
@@ -207,6 +226,10 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			if cmd, handled := m.updateSlash(k); handled {
 				return m, cmd
 			}
+		}
+		if isKey && (k.String() == "tab" || k.String() == "shift+tab") {
+			m.indent(k.String() == "tab")
+			return m, nil
 		}
 		if isKey && k.String() == "esc" {
 			m.mode = ModeNormal

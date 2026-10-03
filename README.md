@@ -119,6 +119,7 @@ Leader is `Space`, as in NvChad. Press `?` or `Space h` in the app for the cheat
 | :-- | :-- |
 | `Tab` / `Shift+Tab` | Next / previous pane |
 | `Ctrl+H` / `Ctrl+L` | Pane to the left / right |
+| `Space Tab` / `Space Shift+Tab` | Next / previous tab |
 | `[` / `]` | Previous / next tab |
 | `Space x` | Close tab |
 | `Space e` | Focus explorer |
@@ -167,6 +168,7 @@ Leader is `Space`, as in NvChad. Press `?` or `Space h` in the app for the cheat
 | NORMAL | `Ctrl+D` / `Ctrl+U`, `Ctrl+E` / `Ctrl+Y` | Scroll |
 | NORMAL | `x` / `dd` | Delete character / line |
 | INSERT | `/` | Block menu (at line start or after a space; `↑↓`, `Enter`, `Esc`) |
+| INSERT | `Tab` / `Shift+Tab` | Indent (nests list items) / outdent |
 | INSERT | `Esc` | Back to NORMAL |
 | COMMAND | `:w` | Save (Save As for new notes) |
 | COMMAND | `:w name`, `:saveas name` | Save under a new name (`folder/name` works) |

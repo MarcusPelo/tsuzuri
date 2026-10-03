@@ -236,3 +236,28 @@ func (m *Model) DeleteBefore(n int) {
 	m.value[m.row] = append(line[:m.col-n:m.col-n], line[m.col:]...)
 	m.col -= n
 }
+
+// IndentLine prepends n spaces to the cursor's line, keeping the cursor on
+// the same character.
+func (m *Model) IndentLine(n int) {
+	pad := make([]rune, n)
+	for i := range pad {
+		pad[i] = ' '
+	}
+	m.value[m.row] = append(pad, m.value[m.row]...)
+	m.col += n
+}
+
+// OutdentLine removes up to n leading spaces from the cursor's line.
+func (m *Model) OutdentLine(n int) {
+	line := m.value[m.row]
+	k := 0
+	for k < n && k < len(line) && line[k] == ' ' {
+		k++
+	}
+	m.value[m.row] = append([]rune(nil), line[k:]...)
+	m.col = max(m.col-k, 0)
+}
+
+// CurrentLine returns the cursor's whole line.
+func (m Model) CurrentLine() string { return string(m.value[m.row]) }

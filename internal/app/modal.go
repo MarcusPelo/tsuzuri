@@ -22,6 +22,7 @@ var keymapSections = [][]keymapSection{
 			{"\\ / Ctrl+P", "Find note (opens in this tab)"},
 			{"Ctrl+B", "Toggle explorer"},
 			{"Tab", "Next pane"},
+			{"SPC Tab", "Next tab (SPC S-Tab: previous)"},
 			{"[ / ]", "Previous / next tab"},
 			{"SPC x", "Close tab"},
 			{"SPC p", "Toggle preview"},
@@ -43,6 +44,7 @@ var keymapSections = [][]keymapSection{
 	{
 		{" EDITOR · NORMAL", [][2]string{
 			{"i a A I", "Insert mode"},
+			{"Tab/S-Tab", "Indent / outdent (insert)"},
 			{"o / O", "New line below / above"},
 			{"h j k l", "Move"},
 			{"w / b", "Next / previous word"},

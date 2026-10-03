@@ -152,3 +152,27 @@ func TestSlashMenuInsertsBlocks(t *testing.T) {
 		t.Fatal("Esc should only close the menu")
 	}
 }
+
+func TestTabIndents(t *testing.T) {
+	c := content.New(theme.DefaultTheme())
+	c.SetSize(80, 10)
+	c.SetPage(core.Page{ID: "a.md", Content: ""})
+	c.SetFocused(true)
+	c = keys(c, "i- item")
+	c, _ = c.Update(tea.KeyMsg{Type: tea.KeyTab})
+	if c.Value() != "  - item" {
+		t.Fatalf("Tab on a list line should nest it, got %q", c.Value())
+	}
+	c, _ = c.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
+	if c.Value() != "- item" {
+		t.Fatalf("Shift+Tab should outdent, got %q", c.Value())
+	}
+	c = keys(c, " x")
+	c, _ = c.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	c = keys(c, "a")
+	c, _ = c.Update(tea.KeyMsg{Type: tea.KeyTab})
+	c = keys(c, "b")
+	if !strings.HasSuffix(c.Value(), "\na  b") {
+		t.Fatalf("Tab in text should insert two spaces, got %q", c.Value())
+	}
+}

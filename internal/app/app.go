@@ -527,6 +527,10 @@ func (m *Model) handleLeader(s string) tea.Cmd {
 		return m.closeBuffer(m.active, false)
 	case "p":
 		return m.togglePreview()
+	case "tab":
+		return m.cycleBuffer(1)
+	case "shift+tab":
+		return m.cycleBuffer(-1)
 	case "t":
 		return m.openThemePicker()
 	case "d":

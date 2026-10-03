@@ -556,3 +556,41 @@ func TestSlashLinkToPage(t *testing.T) {
 		t.Fatalf("unexpected link: %q", got.Content)
 	}
 }
+
+func TestTabIndentsAndLeaderTabSwitchesTabs(t *testing.T) {
+	store := newTestStore(t)
+	for _, n := range []string{"one", "two"} {
+		if _, err := store.SaveAs("", n, n); err != nil {
+			t.Fatal(err)
+		}
+	}
+	h := newHarness(t, store)
+	h.send(tea.KeyMsg{Type: tea.KeyCtrlP})
+	h.keys("one")
+	h.key(tea.KeyEnter)
+	h.send(tea.KeyMsg{Type: tea.KeyCtrlP})
+	h.keys("two")
+	h.send(tea.KeyMsg{Type: tea.KeyCtrlT})
+	activeTab := func() string {
+		row := strings.Split(h.view(), "\n")[0]
+		return row[strings.Index(row, "▎"):][:24]
+	}
+	if !strings.Contains(activeTab(), "two") {
+		t.Fatalf("expected two.md active, got %q", activeTab())
+	}
+	h.keys(" ")
+	h.key(tea.KeyTab)
+	if !strings.Contains(activeTab(), "one") {
+		t.Fatalf("Space Tab should switch to the next tab, got %q", activeTab())
+	}
+
+	h.keys("I")
+	h.key(tea.KeyTab)
+	if v := h.view(); !strings.Contains(v, "INSERT") {
+		t.Fatalf("Tab in INSERT mode must not leave the editor:\n%s", v)
+	}
+	h.send(tea.KeyMsg{Type: tea.KeyCtrlS})
+	if got, _ := store.Get("one.md"); got.Content != "  one" {
+		t.Fatalf("Tab in INSERT mode should indent, got %q", got.Content)
+	}
+}
