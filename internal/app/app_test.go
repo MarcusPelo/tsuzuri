@@ -845,3 +845,54 @@ func TestEmojiVariationSelectorsNeverReachTheScreen(t *testing.T) {
 		t.Fatal("variation selectors / joiners must be stripped so rows keep their width")
 	}
 }
+
+func TestAddChoiceQuestionAndChangeType(t *testing.T) {
+	h := openWith(t, "```form\ntitle: Survey\n? Name\n```")
+	h.clickText("add question")
+	h.keys("Favourite colour")
+	h.key(tea.KeyEnter)
+	if v := h.view(); !strings.Contains(v, "Single choice") || !strings.Contains(v, "Rating") {
+		t.Fatalf("expected the question type menu:\n%s", v)
+	}
+	h.keys("3") // Single choice
+	for range "Option 1 | Option 2 | Option 3" {
+		h.key(tea.KeyBackspace)
+	}
+	h.keys("Red, Green | Blue")
+	h.key(tea.KeyEnter)
+	if got := h.text(); !strings.Contains(got, "? Favourite colour (choice): Red | Green | Blue") {
+		t.Fatalf("choice question not added:\n%s", got)
+	}
+
+	// Change "Name" into a rating question.
+	h.clickText("Name")
+	h.keys("2") // Change type
+	h.keys("5") // Rating
+	if got := h.text(); !strings.Contains(got, "? Name (rating)") {
+		t.Fatalf("type change not applied:\n%s", got)
+	}
+}
+
+func TestTimelineNewItemPicksStartAndEndDates(t *testing.T) {
+	h := openWith(t, "```timeline\nAlpha: 2026-10-01 -> 2026-10-04\n```")
+	h.clickText("+ New")
+	h.keys("Launch")
+	h.key(tea.KeyEnter)
+	if v := h.view(); !strings.Contains(v, "Start date · Launch") {
+		t.Fatalf("expected the start date picker:\n%s", v)
+	}
+	today := time.Now()
+	h.keys("ll") // start = today + 2
+	h.key(tea.KeyEnter)
+	if v := h.view(); !strings.Contains(v, "End date · Launch") {
+		t.Fatalf("expected the end date picker:\n%s", v)
+	}
+	h.keys("hh") // cannot go before the start
+	h.keys("j")  // + 1 week
+	h.key(tea.KeyEnter)
+	start := today.AddDate(0, 0, 2).Format("2006-01-02")
+	end := today.AddDate(0, 0, 9).Format("2006-01-02")
+	if got := h.text(); !strings.Contains(got, "Launch: "+start+" -> "+end) {
+		t.Fatalf("expected Launch %s -> %s:\n%s", start, end, got)
+	}
+}

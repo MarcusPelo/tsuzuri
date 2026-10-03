@@ -65,6 +65,7 @@ type Model struct {
 
 	promptBox *promptDialog
 	menuBox   *menuDialog
+	datePick  *datePicker
 
 	configPath string // where the theme choice is saved ("" = don't save)
 	quitting   bool   // "Save All" before quitting is in progress
@@ -291,6 +292,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	if m.browser != nil {
 		return m, m.browser.update(&m, msg)
+	}
+	if m.datePick != nil {
+		switch msg.(type) {
+		case tea.KeyMsg, tea.MouseMsg:
+			return m, m.datePick.update(&m, msg)
+		}
+		return m, nil
 	}
 	if m.promptBox != nil {
 		return m, m.promptBox.update(&m, msg)
@@ -813,6 +821,9 @@ func (m Model) View() string {
 		screen = ui.Overlay(screen, box, x, y)
 	case m.browser != nil:
 		box, x, y := m.browser.view(&m)
+		screen = ui.Overlay(screen, box, x, y)
+	case m.datePick != nil:
+		box, x, y := m.datePick.view(&m)
 		screen = ui.Overlay(screen, box, x, y)
 	case m.promptBox != nil:
 		box, x, y := m.promptBox.view(&m)
