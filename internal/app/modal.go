@@ -69,6 +69,7 @@ var keymapSections = [][]keymapSection{
 		{"󰍽 MOUSE", [][2]string{
 			{"Click", "Tabs, tree, cursor"},
 			{"Wheel", "Scroll any pane"},
+			{"< / > / T", "Calendar month (preview)"},
 		}},
 	},
 }
