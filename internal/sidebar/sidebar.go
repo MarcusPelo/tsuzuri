@@ -70,6 +70,12 @@ func (m *Model) SetSize(w, h int) {
 	m.ensureVisible()
 }
 
+// SetTheme switches colours.
+func (m *Model) SetTheme(th theme.Theme) {
+	m.theme = th
+	m.renameInput.TextStyle = lipgloss.NewStyle().Foreground(th.Fg)
+}
+
 // SetWorkspaceName sets the label shown above the tree.
 func (m *Model) SetWorkspaceName(name string) {
 	if name != "" {
@@ -529,8 +535,8 @@ func (m Model) renderItem(item TreeItem, selected bool) string {
 			arrow = "  "
 			icon = folderEmpty
 		}
-		iconStyle = base.Foreground(th.Blue)
-		nameStyle = base.Foreground(th.Blue)
+		iconStyle = base.Foreground(th.Folder)
+		nameStyle = base.Foreground(th.Folder)
 	case item.HasChildren:
 		arrow = chevronRight
 		if item.Expanded {

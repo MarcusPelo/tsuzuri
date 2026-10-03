@@ -30,6 +30,8 @@
 - **Vim editing.** `NORMAL`, `INSERT` and `COMMAND` modes with motions (`hjkl`, `w`/`b`, `0`/`$`, `gg`/`G`, `Ctrl+D`/`Ctrl+U`), `x`, `dd`, `o`/`O`, and `:w`, `:w name`, `:wq`, `:q!`, `:bd`, `:enew`.
 - **Mouse everywhere.** Click tabs, close buttons, the `+` button, tree rows and the editor (places the cursor). The wheel scrolls whichever pane is under the pointer.
 - **Live preview.** Headings, checklists, callouts, code blocks and tables render as you type. Toggle it from the tabline or with `Space p`.
+- **96 NvChad themes.** Every base46 theme (onedark, catppuccin, gruvbox, tokyonight, rosepine, nord, everforest, kanagawa, the light ones …). `Space t` opens a picker that previews as you move; the choice is remembered.
+- **Global finder.** `Ctrl+P` (or `f` on the start screen) opens a Telescope-style fuzzy finder with a file preview. `Enter` opens the note in the current tab, `Ctrl+T` in a new one.
 - **Notion-style nesting.** A note can have sub-notes: `Project.md` plus a sibling `Project/` folder.
 
 ## Install
@@ -68,7 +70,15 @@ Requires the Go version listed in `go.mod`. Icons need a [Nerd Font](https://www
 tsuzuri                      # open the current directory as the workspace
 tsuzuri --dir ~/notes        # open a specific folder (created if missing)
 TSUZURI_WORKSPACE=~/notes tsuzuri
+tsuzuri --theme catppuccin   # theme for this session
+tsuzuri --list-themes
 tsuzuri --version
+```
+
+Your theme choice is saved to `~/.config/tsuzuri/config.json` (or your OS's config directory):
+
+```json
+{ "theme": "tokyonight" }
 ```
 
 The workspace is picked in this order: `--dir`, then `$TSUZURI_WORKSPACE`, then the current directory. Hidden files and folders (names starting with `.`) are not shown. The debug log goes to your user cache directory (for example `~/Library/Caches/tsuzuri/tsuzuri.log` on macOS, `~/.cache/tsuzuri/tsuzuri.log` on Linux), never into your notes.
@@ -98,7 +108,7 @@ Leader is `Space`, as in NvChad. Press `?` or `Space h` in the app for the cheat
 | :-- | :-- |
 | `Ctrl+N` | New note (unsaved `Untitled-N` tab) |
 | `Ctrl+S` | Save; new notes open Save As |
-| `Ctrl+P` | Find a note |
+| `Ctrl+P` | Find a note (Telescope-style; `Enter` opens here, `Ctrl+T` in a new tab) |
 | `Ctrl+B` | Toggle explorer |
 | `Ctrl+C` | Quit (offers to save unsaved tabs) |
 
@@ -114,6 +124,7 @@ Leader is `Space`, as in NvChad. Press `?` or `Space h` in the app for the cheat
 | `Space f` | Find a note |
 | `Space n` | New note |
 | `Space p` | Toggle preview |
+| `Space t` | Theme picker |
 | `Space d` | Start screen |
 | `Space w` | Save |
 
@@ -123,6 +134,7 @@ Leader is `Space`, as in NvChad. Press `?` or `Space h` in the app for the cheat
 | :-- | :-- |
 | `n` | New note |
 | `f` | Find note |
+| `t` | Themes |
 | `e` | Open explorer |
 | `1`–`5` | Open recent note |
 | `j` / `k`, `Enter` | Move, select |
@@ -140,7 +152,7 @@ Leader is `Space`, as in NvChad. Press `?` or `Space h` in the app for the cheat
 | `a` | New sub-note under the selection |
 | `r` | Rename (`Enter` confirm, `Esc` cancel) |
 | `d` | Delete (asks first) |
-| `/` | Search (`↑`/`↓` pick, `Enter` open, `Esc` cancel) |
+| `/` | Find a note |
 | `W` | Collapse all |
 
 ### Editor
@@ -160,6 +172,7 @@ Leader is `Space`, as in NvChad. Press `?` or `Space h` in the app for the cheat
 | COMMAND | `:q` / `:q!` | Quit / quit discarding changes |
 | COMMAND | `:bd` / `:bd!` | Close tab / discard and close |
 | COMMAND | `:enew` | New note |
+| COMMAND | `:colorscheme name` | Switch theme (`:colo` with no name opens the picker) |
 
 ### Save As dialog
 
@@ -200,7 +213,8 @@ Code layout:
 | `internal/textarea` | Vendored bubbles textarea with scrolling and click-to-position additions |
 | `internal/preview` | Markdown compiler and preview viewport |
 | `internal/ui` | Exact-size pane fitting and modal overlays |
-| `internal/theme` | NvChad onedark palette |
+| `internal/theme` | NvChad base46 palettes (`palettes_gen.go` is generated) |
+| `internal/config` | Saved preferences |
 
 ### Releasing
 
@@ -210,6 +224,11 @@ Releases are built by [GoReleaser](https://goreleaser.com) in GitHub Actions. Pu
 git tag -a v0.1.0 -m "v0.1.0"
 git push origin v0.1.0
 ```
+
+## Credits
+
+- Colour themes are generated from [NvChad base46](https://github.com/NvChad/base46) (MIT).
+- `internal/textarea` is adapted from [charmbracelet/bubbles](https://github.com/charmbracelet/bubbles) (MIT).
 
 ## License
 

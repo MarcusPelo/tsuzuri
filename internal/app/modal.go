@@ -19,12 +19,13 @@ var keymapSections = [][]keymapSection{
 		{"󰕭 GENERAL", [][2]string{
 			{"Ctrl+N", "New note (unsaved tab)"},
 			{"Ctrl+S", "Save (new notes: pick folder)"},
-			{"Ctrl+P", "Find note"},
+			{"Ctrl+P", "Find note (opens in this tab)"},
 			{"Ctrl+B", "Toggle explorer"},
 			{"Tab", "Next pane"},
 			{"[ / ]", "Previous / next tab"},
 			{"SPC x", "Close tab"},
 			{"SPC p", "Toggle preview"},
+			{"SPC t", "Themes"},
 			{"SPC d", "Home screen"},
 			{"Ctrl+C", "Quit (asks to save)"},
 		}},
@@ -36,7 +37,7 @@ var keymapSections = [][]keymapSection{
 			{"a", "New sub-note"},
 			{"r", "Rename"},
 			{"d", "Delete (asks first)"},
-			{"/", "Search"},
+			{"/", "Find note"},
 		}},
 	},
 	{
@@ -57,6 +58,7 @@ var keymapSections = [][]keymapSection{
 			{":q / :q!", "Quit / discard"},
 			{":bd", "Close tab"},
 			{":enew", "New note"},
+			{":colo name", "Switch theme"},
 		}},
 		{"󰍽 MOUSE", [][2]string{
 			{"Click", "Tabs, tree, cursor"},

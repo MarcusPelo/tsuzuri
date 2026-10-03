@@ -25,6 +25,7 @@ const (
 	ActionKeymap
 	ActionQuit
 	ActionOpenRecent
+	ActionThemes
 	ActionNone
 )
 
@@ -70,6 +71,7 @@ func New(th theme.Theme) Model {
 			{Key: "n", Icon: "", Label: "New Note", Action: ActionNewPage},
 			{Key: "f", Icon: "󰍉", Label: "Find Note", Action: ActionFind},
 			{Key: "e", Icon: "󰙅", Label: "Open Explorer", Action: ActionBrowse},
+			{Key: "t", Icon: "\U000f03d8", Label: "Themes", Action: ActionThemes},
 			{Key: "?", Icon: "", Label: "Keymaps", Action: ActionKeymap},
 			{Key: "q", Icon: "󰩈", Label: "Quit", Action: ActionQuit},
 		},
@@ -81,6 +83,9 @@ func (m *Model) SetSize(w, h int) {
 	m.width = max(w, 0)
 	m.height = max(h, 0)
 }
+
+// SetTheme switches colours.
+func (m *Model) SetTheme(th theme.Theme) { m.theme = th }
 
 // SetWorkspace sets the path shown in the footer.
 func (m *Model) SetWorkspace(p string) { m.workspace = p }

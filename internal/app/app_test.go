@@ -10,6 +10,7 @@ import (
 
 	"github.com/jaisuriya-11/tsuzuri/internal/app"
 	"github.com/jaisuriya-11/tsuzuri/internal/core"
+	"github.com/jaisuriya-11/tsuzuri/internal/theme"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
@@ -39,8 +40,8 @@ type harness struct {
 	store *core.Store
 }
 
-func newHarness(t *testing.T, store *core.Store) *harness {
-	h := &harness{t: t, m: app.New(store), store: store}
+func newHarness(t *testing.T, store *core.Store, opts ...app.Option) *harness {
+	h := &harness{t: t, m: app.New(store, opts...), store: store}
 	h.send(tea.WindowSizeMsg{Width: termW, Height: termH})
 	return h
 }
@@ -458,5 +459,51 @@ func TestCtrlBFocusesExplorerFromInsertMode(t *testing.T) {
 	h.key(tea.KeyEnter)
 	if tabs := strings.Split(h.view(), "\n")[0]; !strings.Contains(tabs, "b.md") {
 		t.Fatalf("expected tree keys to work after Ctrl+B: %q", tabs)
+	}
+}
+
+func TestThemePickerPreviewRevertAndSave(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "config.json")
+	h := newHarness(t, newTestStore(t), app.WithConfigPath(cfgPath))
+
+	h.keys("t")
+	if v := h.view(); !strings.Contains(v, "Themes") || !strings.Contains(v, "onedark") {
+		t.Fatalf("expected theme picker:\n%s", v)
+	}
+	h.keys("gruvbox_light")
+	h.key(tea.KeyEsc) // revert
+	if _, err := os.Stat(cfgPath); err == nil {
+		t.Fatal("Esc must not save a theme")
+	}
+
+	h.keys("t")
+	h.keys("gruvbox_light")
+	h.key(tea.KeyEnter)
+	data, err := os.ReadFile(cfgPath)
+	if err != nil || !strings.Contains(string(data), "gruvbox_light") {
+		t.Fatalf("expected theme saved, got %q %v", data, err)
+	}
+
+	// :colorscheme from the editor.
+	h.keys("n")
+	h.key(tea.KeyEsc)
+	h.keys(":colorscheme nord")
+	h.key(tea.KeyEnter)
+	if data, _ := os.ReadFile(cfgPath); !strings.Contains(string(data), "nord") {
+		t.Fatalf("expected :colorscheme to save, got %q", data)
+	}
+	h.keys(":colo nosuch")
+	h.key(tea.KeyEnter)
+	if v := h.view(); !strings.Contains(v, "Cannot find color scheme") {
+		t.Fatalf("expected error for unknown theme:\n%s", v)
+	}
+}
+
+func TestEveryThemeRendersFullFrames(t *testing.T) {
+	for _, name := range theme.Names() {
+		h := newHarness(t, newTestStore(t), app.WithTheme(name))
+		h.view()
+		h.keys("n")
+		h.view()
 	}
 }

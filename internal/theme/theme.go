@@ -2,11 +2,18 @@
 // and lipgloss style constructors.
 package theme
 
-import "github.com/charmbracelet/lipgloss"
+import (
+	"sort"
+
+	"github.com/charmbracelet/lipgloss"
+)
 
 // Theme encapsulates design system colors. The palette mirrors NvChad's
-// default "onedark" base46 theme so the UI reads like an NvChad session.
+// base46 themes (onedark by default) so the UI reads like an NvChad session.
 type Theme struct {
+	Name  string
+	Light bool
+
 	// Base surfaces (darkest to lightest).
 	DarkerBg  lipgloss.Color // tree / tabufline fill
 	Bg        lipgloss.Color // editor background
@@ -35,6 +42,7 @@ type Theme struct {
 	Teal       lipgloss.Color
 	Orange     lipgloss.Color
 	Cyan       lipgloss.Color
+	Folder     lipgloss.Color
 
 	// Semantic aliases kept for the Markdown compiler and older components.
 	NormalBg    lipgloss.Color
@@ -50,35 +58,71 @@ type Theme struct {
 	BorderFocus lipgloss.Color
 }
 
-// DefaultTheme returns the NvChad onedark palette.
-func DefaultTheme() Theme {
-	t := Theme{
-		DarkerBg:  lipgloss.Color("#1b1f27"),
-		Bg:        lipgloss.Color("#1e222a"),
-		Bg2:       lipgloss.Color("#252931"),
-		OneBg:     lipgloss.Color("#282c34"),
-		OneBg2:    lipgloss.Color("#353b45"),
-		OneBg3:    lipgloss.Color("#373b43"),
-		LightBg:   lipgloss.Color("#2d3139"),
-		StatusBg:  lipgloss.Color("#22262e"),
-		Line:      lipgloss.Color("#31353d"),
-		Grey:      lipgloss.Color("#42464e"),
-		GreyFg:    lipgloss.Color("#565c64"),
-		GreyFg2:   lipgloss.Color("#6f737b"),
-		LightGrey: lipgloss.Color("#6f737b"),
-		Fg:        lipgloss.Color("#abb2bf"),
+// DefaultName is the theme used when none is configured.
+const DefaultName = "onedark"
 
-		Red:        lipgloss.Color("#e06c75"),
-		Pink:       lipgloss.Color("#ff75a0"),
-		Green:      lipgloss.Color("#98c379"),
-		Blue:       lipgloss.Color("#61afef"),
-		NordBlue:   lipgloss.Color("#81a1c1"),
-		Yellow:     lipgloss.Color("#e7c787"),
-		Purple:     lipgloss.Color("#de98fd"),
-		DarkPurple: lipgloss.Color("#c882e7"),
-		Teal:       lipgloss.Color("#519aba"),
-		Orange:     lipgloss.Color("#fca2aa"),
-		Cyan:       lipgloss.Color("#a3b8ef"),
+// palette is one NvChad base46 "base_30" colour table.
+type palette struct {
+	Light bool
+	Fg, DarkerBg, Bg, Bg2, OneBg, OneBg2, OneBg3, Grey, GreyFg, GreyFg2,
+	LightGrey, Red, Pink, Line, Green, NordBlue, Blue, Yellow, Purple,
+	DarkPurple, Teal, Orange, Cyan, StatusBg, LightBg, Folder string
+}
+
+// Names lists every bundled theme, sorted.
+func Names() []string {
+	names := make([]string, 0, len(palettes))
+	for n := range palettes {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	return names
+}
+
+// DefaultTheme returns the NvChad onedark theme.
+func DefaultTheme() Theme {
+	t, _ := Get(DefaultName)
+	return t
+}
+
+// Get returns the named theme; ok is false for unknown names.
+func Get(name string) (Theme, bool) {
+	p, ok := palettes[name]
+	if !ok {
+		return Theme{}, false
+	}
+	c := func(hex string) lipgloss.Color { return lipgloss.Color(hex) }
+	t := Theme{
+		Name:  name,
+		Light: p.Light,
+
+		DarkerBg:  c(p.DarkerBg),
+		Bg:        c(p.Bg),
+		Bg2:       c(p.Bg2),
+		OneBg:     c(p.OneBg),
+		OneBg2:    c(p.OneBg2),
+		OneBg3:    c(p.OneBg3),
+		LightBg:   c(p.LightBg),
+		StatusBg:  c(p.StatusBg),
+		Line:      c(p.Line),
+		Grey:      c(p.Grey),
+		GreyFg:    c(p.GreyFg),
+		GreyFg2:   c(p.GreyFg2),
+		LightGrey: c(p.LightGrey),
+		Fg:        c(p.Fg),
+
+		Red:        c(p.Red),
+		Pink:       c(p.Pink),
+		Green:      c(p.Green),
+		Blue:       c(p.Blue),
+		NordBlue:   c(p.NordBlue),
+		Yellow:     c(p.Yellow),
+		Purple:     c(p.Purple),
+		DarkPurple: c(p.DarkPurple),
+		Teal:       c(p.Teal),
+		Orange:     c(p.Orange),
+		Cyan:       c(p.Cyan),
+		Folder:     c(p.Folder),
 	}
 
 	t.NormalBg = t.Blue
@@ -92,5 +136,5 @@ func DefaultTheme() Theme {
 	t.SelectedBg = t.OneBg
 	t.Border = t.Line
 	t.BorderFocus = t.Blue
-	return t
+	return t, true
 }

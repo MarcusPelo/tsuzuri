@@ -53,3 +53,9 @@ type StatusMsg struct {
 	Text  string
 	Error bool
 }
+
+// ThemeMsg switches the colour theme (":colorscheme name"). An empty Name
+// opens the theme picker.
+type ThemeMsg struct {
+	Name string
+}

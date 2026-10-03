@@ -7,6 +7,12 @@ All notable changes to this project are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- All 96 NvChad base46 themes with a live-preview picker (`Space t`, home
+  screen, `:colorscheme`), `--theme` / `--list-themes` flags, and the choice
+  saved in the user config file. The whole screen is painted with the theme,
+  so light themes work on dark terminals.
+- Global Telescope-style finder (`Ctrl+P`, `f` on home) with fuzzy matching
+  and preview; opens in the current tab unless it has unsaved changes.
 - NvChad onedark look: nvdash start screen, nvim-tree explorer with indent
   guides, buffer tabline, statusline with mode, file, folder, words and cursor.
 - Save As dialog for new notes: choose a folder from a list (or type a new
@@ -19,6 +25,10 @@ All notable changes to this project are documented here. The format follows
 - Space-leader shortcuts, `Ctrl+S`, `Ctrl+P`, preview toggle.
 
 ### Fixed
+- Markdown preview: raw escape codes leaking into text, raw HTML, long lines
+  cut off instead of wrapped, piles of blank lines.
+- Explorer: clicking a file stole keyboard focus; `Ctrl+B` now focuses it
+  from any mode.
 - Files longer than 99 lines were truncated on load (and the rest lost on save).
 - Renaming a note from the explorer erased its content.
 - Line numbers of 100+ broke the editor layout.

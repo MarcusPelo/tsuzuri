@@ -48,6 +48,19 @@ func New(th theme.Theme) Model {
 	}
 }
 
+// SetTheme switches colours.
+func (m *Model) SetTheme(th theme.Theme) {
+	m.theme = th
+	m.textarea.Cursor.Style = lipgloss.NewStyle().Foreground(th.Fg)
+	configureTextareaStyles(&m.textarea, th)
+	value := m.cmdInput.Value()
+	m.cmdInput = createCommandInput(th)
+	m.cmdInput.SetValue(value)
+	if m.mode == ModeCommand && m.focused {
+		m.cmdInput.Focus()
+	}
+}
+
 // Init initializes the textarea model commands.
 func (m Model) Init() tea.Cmd {
 	return textarea.Blink

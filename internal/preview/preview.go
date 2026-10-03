@@ -72,6 +72,12 @@ func (m *Model) SetPage(p core.Page) {
 	m.SetContent(p.Content)
 }
 
+// SetTheme switches colours and re-renders.
+func (m *Model) SetTheme(th theme.Theme) {
+	m.theme = th
+	m.recompile()
+}
+
 // SetContent recompiles the raw Markdown into styled ANSI text in real time.
 func (m *Model) SetContent(content string) {
 	m.rawContent = content

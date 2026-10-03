@@ -284,7 +284,7 @@ func (f *finder) view(m *Model) (string, int, int) {
 
 	// Prompt.
 	f.input.Width = max(inner-8, 1)
-	prompt := field.Foreground(th.Blue).Bold(true).Render("  ") + f.input.View()
+	prompt := field.Foreground(th.Blue).Bold(true).Render(" \uf002 ") + f.input.View()
 	rows = append(rows, bg.Render(" ")+ui.FitLine(prompt, inner-2, field)+bg.Render(" "))
 	rows = append(rows, bg.Foreground(th.Line).Render(strings.Repeat("─", inner)))
 

@@ -57,10 +57,13 @@ type Model struct {
 	active   string
 	draftSeq int
 
-	confirm  *confirmDialog
-	saveAs   *saveAsDialog
-	finder   *finder
-	quitting bool // "Save All" before quitting is in progress
+	confirm *confirmDialog
+	saveAs  *saveAsDialog
+	finder  *finder
+	themes  *themePicker
+
+	configPath string // where the theme choice is saved ("" = don't save)
+	quitting   bool   // "Save All" before quitting is in progress
 
 	status    string
 	statusErr bool
@@ -71,9 +74,26 @@ type Model struct {
 	preview   preview.Model
 }
 
+// Option customises the app at construction.
+type Option func(*Model)
+
+// WithTheme starts with the named base46 theme (unknown names are ignored).
+func WithTheme(name string) Option {
+	return func(m *Model) {
+		if th, ok := theme.Get(name); ok {
+			m.applyTheme(th, false)
+		}
+	}
+}
+
+// WithConfigPath saves theme changes to the given config file.
+func WithConfigPath(path string) Option {
+	return func(m *Model) { m.configPath = path }
+}
+
 // New constructs the root App container for a workspace on disk. Nothing is
 // seeded and nothing is opened until the user asks.
-func New(store *core.Store) Model {
+func New(store *core.Store, opts ...Option) Model {
 	th := theme.DefaultTheme()
 
 	m := Model{
@@ -92,6 +112,9 @@ func New(store *core.Store) Model {
 	m.sidebar.SetWorkspaceName(filepath.Base(store.Root()))
 	m.dashboard.SetWorkspace(tildePath(store.Root()))
 	m.reloadTree()
+	for _, opt := range opts {
+		opt(&m)
+	}
 	return m
 }
 
@@ -248,6 +271,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if m.finder != nil {
 		return m, m.finder.update(&m, msg)
 	}
+	if m.themes != nil {
+		return m, m.themes.update(&m, msg)
+	}
 	if m.showKeymap {
 		switch msg := msg.(type) {
 		case tea.KeyMsg:
@@ -275,6 +301,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.openFile(msg.ID)
 	case core.FindRequestMsg:
 		return m, m.openFinder()
+	case core.ThemeMsg:
+		if msg.Name == "" {
+			return m, m.openThemePicker()
+		}
+		m.setThemeByName(msg.Name)
+		return m, nil
 	case core.PageCreatedMsg:
 		return m, m.newDraft(msg.Page.ParentID)
 	case core.PageUpdatedMsg:
@@ -481,6 +513,8 @@ func (m *Model) handleLeader(s string) tea.Cmd {
 		return m.closeBuffer(m.active, false)
 	case "p":
 		return m.togglePreview()
+	case "t":
+		return m.openThemePicker()
 	case "d":
 		m.goHome()
 	case "h", "?":
@@ -505,6 +539,8 @@ func (m *Model) handleDashboardKey(k tea.KeyMsg) tea.Cmd {
 	case "?":
 		m.showKeymap = true
 		return nil
+	case "t":
+		return m.openThemePicker()
 	case "q":
 		return m.requestQuit(false)
 	case "esc":
@@ -540,6 +576,8 @@ func (m *Model) runDashboardAction(a dashboard.Action, id string) tea.Cmd {
 		return m.requestQuit(false)
 	case dashboard.ActionOpenRecent:
 		return m.openFile(id)
+	case dashboard.ActionThemes:
+		return m.openThemePicker()
 	}
 	return nil
 }
@@ -686,10 +724,13 @@ func (m Model) View() string {
 	case m.finder != nil:
 		box, x, y := m.finder.view(&m)
 		screen = ui.Overlay(screen, box, x, y)
+	case m.themes != nil:
+		box, x, y := m.themes.view(&m)
+		screen = ui.Overlay(screen, box, x, y)
 	case m.showKeymap:
 		box := RenderKeymapModal(m.theme, m.width, m.height)
 		x, y := ui.Center(m.width, m.height, lipgloss.Width(box), lipgloss.Height(box))
 		screen = ui.Overlay(screen, box, x, y)
 	}
-	return screen
+	return ui.Paint(screen, lipgloss.NewStyle().Foreground(m.theme.Fg).Background(m.theme.Bg))
 }

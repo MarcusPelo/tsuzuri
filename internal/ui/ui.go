@@ -110,3 +110,23 @@ func Truncate(s string, w int) string {
 	}
 	return ansi.Truncate(s, w, "…")
 }
+
+// Paint gives every cell of a rendered screen a default foreground and
+// background, so a theme looks the same whatever the terminal's own colours
+// are. paint is a style carrying just those two colours.
+func Paint(screen string, paint lipgloss.Style) string {
+	sample := paint.Render("x")
+	i := strings.Index(sample, "x")
+	if i <= 0 {
+		return screen // no colour support (e.g. tests): nothing to do
+	}
+	prefix := sample[:i]
+	const reset = "\x1b[0m"
+	lines := strings.Split(screen, "\n")
+	for n, l := range lines {
+		l = strings.ReplaceAll(l, reset, reset+prefix)
+		l = strings.ReplaceAll(l, "\x1b[m", reset+prefix)
+		lines[n] = prefix + l + reset
+	}
+	return strings.Join(lines, "\n")
+}
