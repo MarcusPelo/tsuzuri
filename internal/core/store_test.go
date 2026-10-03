@@ -342,3 +342,30 @@ func TestListHidesFoldersWithoutMarkdown(t *testing.T) {
 		t.Fatalf("expected only folders leading to notes, got %s", got)
 	}
 }
+
+func TestAttachFileCopiesOutsideFilesAndLinksInsideOnes(t *testing.T) {
+	s := newTestStore(t)
+	outside := filepath.Join(t.TempDir(), "photo.png")
+	if err := os.WriteFile(outside, []byte("png"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	link, err := s.AttachFile("notes", outside)
+	if err != nil || link != "assets/photo.png" {
+		t.Fatalf("first attach = %q, %v", link, err)
+	}
+	if data, _ := os.ReadFile(filepath.Join(s.Root(), "notes/assets/photo.png")); string(data) != "png" {
+		t.Fatal("expected the file copied into notes/assets")
+	}
+	link, _ = s.AttachFile("notes", outside)
+	if link != "assets/photo-2.png" {
+		t.Fatalf("expected a fresh name for a second copy, got %q", link)
+	}
+
+	inside := filepath.Join(s.Root(), "media", "clip.mp4")
+	_ = os.MkdirAll(filepath.Dir(inside), 0o755)
+	_ = os.WriteFile(inside, []byte("mp4"), 0o644)
+	link, err = s.AttachFile("notes", inside)
+	if err != nil || link != "../media/clip.mp4" {
+		t.Fatalf("workspace file should be linked in place, got %q, %v", link, err)
+	}
+}

@@ -61,6 +61,7 @@ type Model struct {
 	saveAs  *saveAsDialog
 	finder  *finder
 	themes  *themePicker
+	browser *fileBrowser
 
 	configPath string // where the theme choice is saved ("" = don't save)
 	quitting   bool   // "Save All" before quitting is in progress
@@ -274,6 +275,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if m.themes != nil {
 		return m, m.themes.update(&m, msg)
 	}
+	if m.browser != nil {
+		return m, m.browser.update(&m, msg)
+	}
 	if m.showKeymap {
 		switch msg := msg.(type) {
 		case tea.KeyMsg:
@@ -311,6 +315,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.newDraft(parent)
 		case "link":
 			return m, m.openLinkPicker()
+		}
+		if kind, ok := strings.CutPrefix(msg.Action, "media:"); ok {
+			return m, m.pickMedia(kind)
+		}
+		return m, nil
+	case mediaPickedMsg:
+		switch {
+		case msg.unavailable:
+			return m, m.openFileBrowser(msg.kind)
+		case msg.err != nil:
+			m.setError("File dialog failed: " + msg.err.Error())
+		case msg.cancelled || msg.path == "":
+			m.setStatus("")
+		default:
+			m.attachMedia(msg.kind, msg.path)
 		}
 		return m, nil
 	case core.ThemeMsg:
@@ -741,6 +760,9 @@ func (m Model) View() string {
 		screen = ui.Overlay(screen, box, x, y)
 	case m.themes != nil:
 		box, x, y := m.themes.view(&m)
+		screen = ui.Overlay(screen, box, x, y)
+	case m.browser != nil:
+		box, x, y := m.browser.view(&m)
 		screen = ui.Overlay(screen, box, x, y)
 	case m.viewMode == viewModeWorkspace && m.focus == focusEditor && m.content.SlashOpen():
 		if box, x, y, ok := m.content.SlashView(); ok {

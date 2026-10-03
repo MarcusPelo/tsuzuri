@@ -3,6 +3,7 @@ package core
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path"
 	"path/filepath"
@@ -560,4 +561,67 @@ func (s *Store) Rename(id, newTitle string) (Page, error) {
 	}
 	p.Title = strings.TrimSuffix(strings.TrimSpace(newTitle), mdExt)
 	return s.Update(p)
+}
+
+// AttachFile makes src available to a note living in noteDir (relative to
+// the root) and returns the link target to write in the note, relative to
+// noteDir. Files already inside the workspace are linked in place; anything
+// else is copied into noteDir/assets/ (renamed if the name is taken).
+func (s *Store) AttachFile(noteDir, src string) (string, error) {
+	absSrc, err := filepath.Abs(src)
+	if err != nil {
+		return "", err
+	}
+	info, err := os.Stat(absSrc)
+	if err != nil {
+		return "", err
+	}
+	if info.IsDir() {
+		return "", fmt.Errorf("%s is a folder", filepath.Base(absSrc))
+	}
+	noteAbs := s.idToAbs(noteDir)
+
+	if rel, err := filepath.Rel(s.root, absSrc); err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		link, err := filepath.Rel(noteAbs, absSrc)
+		if err != nil {
+			return "", err
+		}
+		return filepath.ToSlash(link), nil
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	assets := filepath.Join(noteAbs, "assets")
+	if err := os.MkdirAll(assets, 0o755); err != nil {
+		return "", fmt.Errorf("failed to create assets folder: %w", err)
+	}
+	ext := filepath.Ext(absSrc)
+	stem := strings.TrimSuffix(filepath.Base(absSrc), ext)
+	dst := filepath.Join(assets, stem+ext)
+	for n := 2; fileExists(dst); n++ {
+		dst = filepath.Join(assets, fmt.Sprintf("%s-%d%s", stem, n, ext))
+	}
+	if err := copyFile(absSrc, dst); err != nil {
+		return "", err
+	}
+	return "assets/" + filepath.Base(dst), nil
+}
+
+func copyFile(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(out, in); err != nil {
+		out.Close()
+		os.Remove(dst)
+		return fmt.Errorf("failed to copy %s: %w", filepath.Base(src), err)
+	}
+	return out.Close()
 }

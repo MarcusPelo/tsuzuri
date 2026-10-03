@@ -594,3 +594,54 @@ func TestTabIndentsAndLeaderTabSwitchesTabs(t *testing.T) {
 		t.Fatalf("Tab in INSERT mode should indent, got %q", got.Content)
 	}
 }
+
+func TestSlashImageUsesFileBrowserAndCopiesIntoAssets(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("TSUZURI_NATIVE_PICKER", "0")
+	dl := filepath.Join(home, "Downloads")
+	if err := os.MkdirAll(filepath.Join(dl, "trips"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for name, data := range map[string]string{"photo.png": "png", "notes.txt": "txt", "trips/beach.jpg": "jpg"} {
+		if err := os.WriteFile(filepath.Join(dl, name), []byte(data), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	store := newTestStore(t)
+	if _, err := store.SaveAs("journal", "day", ""); err != nil {
+		t.Fatal(err)
+	}
+	h := newHarness(t, store)
+	h.keys("1")
+	h.keys("i/image")
+	h.key(tea.KeyEnter)
+	v := h.view()
+	if !strings.Contains(v, "Choose an image") || !strings.Contains(v, "photo.png") || strings.Contains(v, "notes.txt") {
+		t.Fatalf("expected image browser in ~/Downloads showing only images and folders:\n%s", v)
+	}
+
+	// Into a sub-folder and pick the image there.
+	h.keys("trips")
+	h.key(tea.KeyEnter)
+	h.key(tea.KeyEnter)
+	h.send(tea.KeyMsg{Type: tea.KeyCtrlS})
+	got, _ := store.Get("journal/day.md")
+	if got.Content != "![beach](assets/beach.jpg)" {
+		t.Fatalf("unexpected note content %q", got.Content)
+	}
+	if data, err := os.ReadFile(filepath.Join(store.Root(), "journal/assets/beach.jpg")); err != nil || string(data) != "jpg" {
+		t.Fatalf("expected image copied into journal/assets, err %v", err)
+	}
+
+	// Any file via /file, chosen by typing a path.
+	h.keys(" /file")
+	h.key(tea.KeyEnter)
+	h.keys("~/Downloads/notes.txt")
+	h.key(tea.KeyEnter)
+	h.send(tea.KeyMsg{Type: tea.KeyCtrlS})
+	if got, _ := store.Get("journal/day.md"); !strings.Contains(got.Content, "(assets/notes.txt)") {
+		t.Fatalf("expected file link, got %q", got.Content)
+	}
+}

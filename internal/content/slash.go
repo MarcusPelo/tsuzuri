@@ -38,9 +38,10 @@ var slashItems = []slashItem{
 	{section: "Basic blocks", icon: "\U000f04eb", label: "Table", aliases: "grid", before: "| ", after: " | Column 2 |\n| --- | --- |\n|  |  |", block: true},
 	{section: "Basic blocks", icon: "\U000f0374", label: "Divider", hint: "---", aliases: "hr rule line separator", before: "---\n", block: true},
 	{section: "Basic blocks", icon: "\U000f0337", label: "Link to page", aliases: "mention reference note", action: "link"},
-	{section: "Media", icon: "\U000f02e9", label: "Image", aliases: "picture photo img", before: "![", after: "](image.png)"},
-	{section: "Media", icon: "\U000f0567", label: "Video", aliases: "movie youtube", before: "[▶ ", after: "](https://)"},
-	{section: "Media", icon: "\U000f075a", label: "Audio", aliases: "sound music", before: "[♪ ", after: "](audio.mp3)"},
+	{section: "Media", icon: "\U000f02e9", label: "Image", aliases: "picture photo img upload", action: "media:image"},
+	{section: "Media", icon: "\U000f0567", label: "Video", aliases: "movie upload", action: "media:video"},
+	{section: "Media", icon: "\U000f075a", label: "Audio", aliases: "sound music upload", action: "media:audio"},
+	{section: "Media", icon: "\U000f0214", label: "File", aliases: "attachment pdf upload document", action: "media:file"},
 	{section: "Media", icon: "\U000f0169", label: "Code", hint: "```", aliases: "snippet block pre", before: "```\n", after: "\n```", block: true},
 }
 

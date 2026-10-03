@@ -14,6 +14,9 @@ All notable changes to this project are documented here. The format follows
 - Notion-style `/` block menu in INSERT mode (headings, lists, to-do, toggle,
   callout, quote, table, divider, code, media, sub-page, link to page).
 - `\` opens the finder (instead of `/`).
+- `/image`, `/video`, `/audio`, `/file` open the system file dialog (or a
+  built-in browser) and copy the file into the note's `assets/` folder.
+- Tab indents in INSERT mode (nests list items); `Space Tab` switches tabs.
 - Global Telescope-style finder (`Ctrl+P`, `f` on home) searching file names
   (fuzzy) and note text across every folder from the root, with preview; opens in the current tab unless it has unsaved changes.
 - NvChad onedark look: nvdash start screen, nvim-tree explorer with indent
