@@ -259,3 +259,13 @@ func TestFoldHeadingsAndCode(t *testing.T) {
 		t.Fatalf("zM should fold everything:\n%s", v)
 	}
 }
+
+func TestTableRowDividers(t *testing.T) {
+	out := ansi.Strip(preview.Compile("| A | B |\n| --- | --- |\n| 1 | 2 |\n| 3 | 4 |", theme.DefaultTheme(), 40))
+	if n := strings.Count(out, "├"); n != 2 {
+		t.Fatalf("expected a divider under the header and between the two rows, got %d:\n%s", n, out)
+	}
+	if strings.Count(out, "└") != 1 || strings.Contains(out, "├───┼───┤\n└") {
+		t.Fatalf("no divider after the last row:\n%s", out)
+	}
+}

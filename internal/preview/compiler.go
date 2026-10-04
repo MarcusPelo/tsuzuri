@@ -553,8 +553,8 @@ func (c *compiler) table(rows [][]string, docStart int) {
 			b.WriteString(line.Render("│"))
 		}
 		c.emit(b.String())
-		if i == 0 {
-			c.emit(border("├", "┼", "┤"))
+		if i < len(rendered)-1 {
+			c.emit(border("├", "┼", "┤")) // divider between every row
 		}
 	}
 	c.emit(border("└", "┴", "┘"))
