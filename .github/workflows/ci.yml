@@ -63,12 +63,7 @@ jobs:
           path: |
             dist/*.tar.gz
             dist/*.zip
-            dist/*.deb
-            dist/*.rpm
-            dist/*.apk
-            dist/*.pkg.tar.zst
             dist/checksums.txt
-            dist/metadata.json
 
   install-macos:
     name: Install (macOS)
@@ -91,26 +86,24 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { image: "ubuntu:24.04", setup: "apt-get update && apt-get install -y python3 curl", pkg: "dpkg -i dist/*_linux_amd64.deb" }
-          - { image: "debian:stable-slim", setup: "apt-get update && apt-get install -y python3 wget", pkg: "dpkg -i dist/*_linux_amd64.deb" }
-          - { image: "fedora:latest", setup: "dnf install -y python3 tar gzip", pkg: "rpm -i dist/*_linux_amd64.rpm" }
-          - { image: "alpine:latest", setup: "apk add --no-cache python3", pkg: "apk add --allow-untrusted dist/*_linux_amd64.apk" }
-          - { image: "archlinux:latest", setup: "pacman -Sy --noconfirm python", pkg: "pacman -U --noconfirm dist/*_linux_amd64.pkg.tar.zst" }
-          - { image: "opensuse/tumbleweed", setup: "zypper -n install python3 curl tar gzip", pkg: "rpm -i --nodeps dist/*_linux_amd64.rpm" }
+          - { image: "ubuntu:24.04", setup: "apt-get update && apt-get install -y python3 curl" }
+          - { image: "debian:stable-slim", setup: "apt-get update && apt-get install -y python3 wget" }
+          - { image: "fedora:latest", setup: "dnf install -y python3 tar gzip" }
+          - { image: "alpine:latest", setup: "apk add --no-cache python3" }
+          - { image: "archlinux:latest", setup: "pacman -Sy --noconfirm python" }
+          - { image: "opensuse/tumbleweed", setup: "zypper -n install python3 curl tar gzip" }
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           name: dist
           path: dist
-      - name: Install script and package
+      - name: Install script
         run: |
           docker run --rm -v "$PWD:/w" -w /w "${{ matrix.image }}" sh -c '
             set -e
             ${{ matrix.setup }}
             sh ./.github/scripts/install-test.sh
-            ${{ matrix.pkg }}
-            /usr/bin/tsuzuri --version
           '
 
   install-windows:
@@ -126,14 +119,12 @@ jobs:
       - name: Install script
         shell: pwsh
         run: |
-          $version = (Get-Content dist/metadata.json | ConvertFrom-Json).version
           $server = Start-Process python -ArgumentList '-m', 'http.server', '8765', '--bind', '127.0.0.1', '--directory', 'dist' -PassThru
           $up = $false
           foreach ($i in 1..30) {
             try { Invoke-WebRequest 'http://127.0.0.1:8765/checksums.txt' -UseBasicParsing -TimeoutSec 2 | Out-Null; $up = $true; break } catch { Start-Sleep -Seconds 1 }
           }
           if (-not $up) { throw 'test server did not start' }
-          $env:TSUZURI_VERSION = "v$version"
           $env:TSUZURI_BASE_URL = 'http://127.0.0.1:8765'
           $env:TSUZURI_INSTALL_DIR = "$PWD\bin"
           ./install.ps1

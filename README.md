@@ -29,13 +29,16 @@ curl -fsSL https://raw.githubusercontent.com/jaisuriya-11/tsuzuri/main/install.s
 irm https://raw.githubusercontent.com/jaisuriya-11/tsuzuri/main/install.ps1 | iex
 ```
 
-**Linux packages:** `.deb`, `.rpm`, `.apk` and Arch packages are on the
-[releases page](https://github.com/jaisuriya-11/tsuzuri/releases/latest).
+**Manual download:** grab `tsuzuri-macos.tar.gz`, `tsuzuri-linux.tar.gz` or
+`tsuzuri-windows.zip` from the
+[latest release](https://github.com/jaisuriya-11/tsuzuri/releases/latest) and put
+`tsuzuri` on your `PATH`.
 
 **Go:** `go install github.com/jaisuriya-11/tsuzuri/cmd/tsuzuri@latest`
 
 Tsuzuri is a single binary with no dependencies. It runs on macOS (Intel and
-Apple Silicon), Windows and any Linux distribution (x86-64, ARM64, ARMv7, x86).
+Apple Silicon), Windows 10/11 and any x86-64 Linux distribution. On other
+CPUs (e.g. Raspberry Pi), install with Go.
 A [Nerd Font](https://www.nerdfonts.com/) is recommended for icons.
 
 ## Quick start
@@ -68,8 +71,7 @@ tsuzuri --list-themes
 Your notes are never touched. Remove the binary the way you installed it:
 
 ```sh
-rm -f /usr/local/bin/tsuzuri ~/.local/bin/tsuzuri               # macOS / Linux script
-sudo apt remove tsuzuri   # or: dnf remove, pacman -R, apk del   # Linux packages
+rm -f /usr/local/bin/tsuzuri ~/.local/bin/tsuzuri   # macOS / Linux
 ```
 
 On Windows, delete `%LOCALAPPDATA%\Programs\tsuzuri` and remove it from your

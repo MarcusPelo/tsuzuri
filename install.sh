@@ -1,5 +1,5 @@
 #!/bin/sh
-# Tsuzuri installer for macOS, Linux (any distro) and FreeBSD.
+# Tsuzuri installer for macOS and Linux (any distribution, x86-64).
 #
 #   curl -fsSL https://raw.githubusercontent.com/jaisuriya-11/tsuzuri/main/install.sh | sh
 #
@@ -26,38 +26,32 @@ fetch() { # fetch URL OUTFILE
 	fi
 }
 
-os=$(uname -s | tr '[:upper:]' '[:lower:]')
+os=$(uname -s)
+arch=$(uname -m)
 case "$os" in
-	linux | darwin | freebsd) ;;
+	Darwin) archive=tsuzuri-macos.tar.gz ;; # universal: Intel and Apple Silicon
+	Linux)
+		case "$arch" in
+			x86_64 | amd64) archive=tsuzuri-linux.tar.gz ;;
+			*) die "prebuilt Linux binaries are x86-64 only (this is $arch); install with: go install github.com/$REPO/cmd/tsuzuri@latest" ;;
+		esac
+		;;
 	*) die "unsupported OS: $os (on Windows use install.ps1)" ;;
 esac
 
-arch=$(uname -m)
-case "$arch" in
-	x86_64 | amd64) arch=amd64 ;;
-	aarch64 | arm64) arch=arm64 ;;
-	armv7* | armv8l) arch=armv7 ;;
-	i386 | i686) arch=386 ;;
-	*) die "unsupported CPU: $arch" ;;
-esac
-
-version=${TSUZURI_VERSION:-}
-if [ -z "$version" ]; then
-	tmpjson=$(mktemp)
-	fetch "https://api.github.com/repos/$REPO/releases/latest" "$tmpjson" || die "could not reach GitHub"
-	version=$(sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' "$tmpjson" | head -n 1)
-	rm -f "$tmpjson"
-	[ -n "$version" ] || die "could not find the latest release"
+version=${TSUZURI_VERSION:-latest}
+if [ -n "${TSUZURI_BASE_URL:-}" ]; then
+	base=$TSUZURI_BASE_URL
+elif [ "$version" = latest ]; then
+	base="https://github.com/$REPO/releases/latest/download"
+else
+	base="https://github.com/$REPO/releases/download/$version"
 fi
-plain=${version#v}
-
-base=${TSUZURI_BASE_URL:-https://github.com/$REPO/releases/download/$version}
-archive="tsuzuri_${plain}_${os}_${arch}.tar.gz"
 
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT INT TERM
 
-say "Downloading Tsuzuri ${version} for ${os}/${arch}..."
+say "Downloading Tsuzuri ($version) for $os..."
 fetch "$base/$archive" "$tmp/$archive" || die "download failed: $base/$archive"
 
 if fetch "$base/checksums.txt" "$tmp/checksums.txt" 2>/dev/null; then

@@ -9,28 +9,23 @@ $ErrorActionPreference = 'Stop'
 
 $repo = 'jaisuriya-11/tsuzuri'
 
-$arch = switch ($env:PROCESSOR_ARCHITECTURE) {
-    'AMD64' { 'amd64' }
-    'ARM64' { 'arm64' }
-    'x86'   { '386' }
-    default { throw "Unsupported CPU: $($env:PROCESSOR_ARCHITECTURE)" }
+# One x64 build: it also runs on Windows on ARM through emulation.
+if ($env:PROCESSOR_ARCHITECTURE -eq 'x86' -and -not $env:PROCESSOR_ARCHITEW6432) {
+    throw 'Tsuzuri needs 64-bit Windows.'
 }
+$archive = 'tsuzuri-windows.zip'
 
 $version = $env:TSUZURI_VERSION
-if (-not $version) {
-    $release = Invoke-RestMethod "https://api.github.com/repos/$repo/releases/latest"
-    $version = $release.tag_name
-}
-$plain = $version.TrimStart('v')
-
 $base = $env:TSUZURI_BASE_URL
-if (-not $base) { $base = "https://github.com/$repo/releases/download/$version" }
-$archive = "tsuzuri_${plain}_windows_${arch}.zip"
+if (-not $base) {
+    if ($version) { $base = "https://github.com/$repo/releases/download/$version" }
+    else { $base = "https://github.com/$repo/releases/latest/download"; $version = 'latest' }
+}
 
 $tmp = Join-Path ([IO.Path]::GetTempPath()) ("tsuzuri-" + [Guid]::NewGuid())
 New-Item -ItemType Directory -Path $tmp | Out-Null
 try {
-    Write-Host "Downloading Tsuzuri $version for windows/$arch..."
+    Write-Host "Downloading Tsuzuri ($version) for Windows..."
     $zip = Join-Path $tmp $archive
     Invoke-WebRequest "$base/$archive" -OutFile $zip -UseBasicParsing
 

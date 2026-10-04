@@ -1,4 +1,9 @@
 # GoReleaser config: https://goreleaser.com
+#
+# One download per platform:
+#   tsuzuri-macos.tar.gz    universal binary (Intel + Apple Silicon)
+#   tsuzuri-linux.tar.gz    x86-64, static: runs on every distribution
+#   tsuzuri-windows.zip     x64 (also runs on Windows on ARM via emulation)
 version: 2
 
 project_name: tsuzuri
@@ -13,27 +18,23 @@ builds:
     main: ./cmd/tsuzuri
     binary: tsuzuri
     env:
-      # Pure Go, statically linked: runs on every Linux distro (glibc or
-      # musl), macOS and Windows without extra libraries.
+      # Pure Go and statically linked: no system libraries needed.
       - CGO_ENABLED=0
-    goos: [linux, darwin, windows, freebsd]
-    goarch: [amd64, arm64, arm, "386"]
-    goarm: ["7"]
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
     ignore:
-      - goos: darwin
-        goarch: arm
-      - goos: darwin
-        goarch: "386"
+      - goos: linux
+        goarch: arm64
       - goos: windows
-        goarch: arm
-      - goos: freebsd
-        goarch: arm
-      - goos: freebsd
-        goarch: "386"
+        goarch: arm64
     flags:
       - -trimpath
     ldflags:
       - -s -w -X main.version={{ .Version }}
+
+universal_binaries:
+  - id: tsuzuri
+    replace: true
 
 archives:
   - id: tsuzuri
@@ -41,30 +42,13 @@ archives:
     format_overrides:
       - goos: windows
         formats: [zip]
+    # Version-free names so https://github.com/…/releases/latest/download/…
+    # always points at the newest build.
     name_template: >-
-      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}{{ with .Arm }}v{{ . }}{{ end }}
+      {{ .ProjectName }}-{{ if eq .Os "darwin" }}macos{{ else }}{{ .Os }}{{ end }}
     files:
       - README.md
       - LICENSE
-
-nfpms:
-  - id: packages
-    package_name: tsuzuri
-    file_name_template: >-
-      {{ .PackageName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}{{ with .Arm }}v{{ . }}{{ end }}
-    homepage: https://github.com/jaisuriya-11/tsuzuri
-    maintainer: Jai Suriya <jaisuriya-11@users.noreply.github.com>
-    description: >-
-      Block-based notebook for the terminal with an NvChad look, editing
-      plain Markdown files with Vim keys, live preview and themes.
-    license: MIT
-    formats: [deb, rpm, apk, archlinux]
-    bindir: /usr/bin
-    contents:
-      - src: README.md
-        dst: /usr/share/doc/tsuzuri/README.md
-      - src: LICENSE
-        dst: /usr/share/licenses/tsuzuri/LICENSE
 
 checksum:
   name_template: checksums.txt
@@ -86,8 +70,8 @@ release:
     irm https://raw.githubusercontent.com/jaisuriya-11/tsuzuri/main/install.ps1 | iex
     ```
 
-    Or download the archive / `.deb` / `.rpm` / `.apk` / Arch package for your system below.
+    Or download the file for your system below and put `tsuzuri` on your `PATH`.
 
-# First release: the notes are the install header above, not a commit list.
+# The notes are the install header above, not a commit list.
 changelog:
   disable: true
