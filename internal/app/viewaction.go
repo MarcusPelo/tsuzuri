@@ -216,6 +216,8 @@ func (m *Model) handleViewHit(h preview.Hit) tea.Cmd {
 		return m.chartHit(h)
 	case strings.HasPrefix(h.Kind, "form:"):
 		return m.formHit(h)
+	case strings.HasPrefix(h.Kind, "table:"):
+		return m.tableHit(h)
 	}
 	return nil
 }
@@ -814,6 +816,62 @@ func (m *Model) formHit(h preview.Hit) tea.Cmd {
 			return m.chooseQuestionType(v, "", func(m *Model, line string) {
 				m.setDocLines(insertAt(m.docLines(), h.End, line))
 			})
+		})
+	}
+	return nil
+}
+
+// ---------------------------------------------------------------------------
+// Tables
+
+func (m *Model) tableEdited() {
+	m.preview.SetContent(m.content.Value())
+	m.refreshModified()
+}
+
+func (m *Model) tableHit(h preview.Hit) tea.Cmd {
+	switch h.Kind {
+	case "table:addrow":
+		m.content.TableOpAt(h.Line, 0, "addrow")
+		m.tableEdited()
+	case "table:addcol":
+		m.content.TableOpAt(h.Line, h.Index, "addcol")
+		m.tableEdited()
+	case "table:cell":
+		lines := m.docLines()
+		header := h.Line+1 < len(lines) && strings.Contains(lines[h.Line+1], "-") &&
+			strings.Trim(strings.ReplaceAll(strings.ReplaceAll(lines[h.Line+1], "|", ""), ":", ""), " -") == ""
+		edit := "Edit cell"
+		if header {
+			edit = "Rename column"
+		}
+		items := []string{edit, "Add row below", "Add column right", "Delete column"}
+		if !header {
+			items = append(items, "Delete row")
+		}
+		label := h.Arg
+		if label == "" {
+			label = "(empty cell)"
+		}
+		m.menu(label, items, func(m *Model, choice int) tea.Cmd {
+			switch items[choice] {
+			case "Edit cell", "Rename column":
+				return m.prompt(edit, h.Arg, "", func(m *Model, v string) tea.Cmd {
+					m.content.SetTableCell(h.Line, h.Index, v)
+					m.tableEdited()
+					return nil
+				})
+			case "Add row below":
+				m.content.TableOpAt(h.Line, h.Index, "addrow")
+			case "Add column right":
+				m.content.TableOpAt(h.Line, h.Index, "addcol")
+			case "Delete column":
+				m.content.TableOpAt(h.Line, h.Index, "delcol")
+			case "Delete row":
+				m.content.TableOpAt(h.Line, h.Index, "delrow")
+			}
+			m.tableEdited()
+			return nil
 		})
 	}
 	return nil
