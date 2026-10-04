@@ -110,7 +110,65 @@ go install github.com/jaisuriya-11/tsuzuri/cmd/tsuzuri@latest
 
 ### Uninstall
 
-Delete the binary (`/usr/local/bin/tsuzuri`, `~/.local/bin/tsuzuri` or `%LOCALAPPDATA%\Programs\tsuzuri`), or remove the package with your package manager. Settings live in `~/.config/tsuzuri` (`%APPDATA%\tsuzuri` on Windows; `~/Library/Application Support/tsuzuri` on macOS).
+Uninstalling never touches your notes: they're ordinary `.md` files in your
+own folders. Remove Tsuzuri the same way you installed it.
+
+**Install script (macOS / Linux)**
+
+```sh
+rm -f /usr/local/bin/tsuzuri ~/.local/bin/tsuzuri   # add sudo for /usr/local/bin if needed
+```
+
+**Install script (Windows, PowerShell)**
+
+```powershell
+$dir = "$env:LOCALAPPDATA\Programs\tsuzuri"
+Remove-Item $dir -Recurse -Force
+$path = ([Environment]::GetEnvironmentVariable('Path', 'User') -split ';' | Where-Object { $_ -and $_ -ne $dir }) -join ';'
+[Environment]::SetEnvironmentVariable('Path', $path, 'User')
+```
+
+**Linux packages**
+
+| Distro | Command |
+| :-- | :-- |
+| Debian, Ubuntu, Mint | `sudo apt remove tsuzuri` (or `sudo dpkg -r tsuzuri`) |
+| Fedora, RHEL, CentOS | `sudo dnf remove tsuzuri` (or `sudo rpm -e tsuzuri`) |
+| openSUSE | `sudo zypper remove tsuzuri` |
+| Alpine | `sudo apk del tsuzuri` |
+| Arch, Manjaro | `sudo pacman -R tsuzuri` |
+
+**Go**
+
+```sh
+rm -f "$(go env GOPATH)/bin/tsuzuri"
+```
+
+**Settings and logs (optional)**
+
+Tsuzuri keeps your theme choice and a debug log outside your notes. Delete
+them for a completely clean removal:
+
+| OS | Settings | Log |
+| :-- | :-- | :-- |
+| macOS | `~/Library/Application Support/tsuzuri` | `~/Library/Caches/tsuzuri` |
+| Linux | `~/.config/tsuzuri` | `~/.cache/tsuzuri` |
+| Windows | `%APPDATA%\tsuzuri` | `%LOCALAPPDATA%\tsuzuri` |
+
+```sh
+# macOS
+rm -rf ~/Library/Application\ Support/tsuzuri ~/Library/Caches/tsuzuri
+# Linux
+rm -rf ~/.config/tsuzuri ~/.cache/tsuzuri
+```
+
+```powershell
+# Windows
+Remove-Item "$env:APPDATA\tsuzuri", "$env:LOCALAPPDATA\tsuzuri" -Recurse -Force -ErrorAction SilentlyContinue
+```
+
+Images you attached with `/image` or `/cover` live in `assets/` folders next
+to your notes; they're part of your notes, so they stay.
 
 ## Usage
 
