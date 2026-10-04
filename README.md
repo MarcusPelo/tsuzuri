@@ -13,9 +13,10 @@ Your notes stay plain Markdown files.
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT License"></a>
 </p>
 
-<a href="docs/demo.mp4"><img src="docs/demo.jpg" alt="Tsuzuri demo video: type / for blocks, boards, calendars, charts and themes" width="860"></a>
 
-<sub>▶ Click to watch the 20-second demo</sub>
+
+https://github.com/user-attachments/assets/86768fcb-3852-4e6b-8b07-6341bd9b3739
+
 
 </div>
 
