@@ -11,7 +11,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// slashItem is one entry of the Notion-style "/" block menu.
+// slashItem is one entry of the "/" block menu.
 type slashItem struct {
 	section string
 	icon    string
@@ -104,7 +104,7 @@ func (m *Model) slashMatches() []slashItem {
 }
 
 // maybeOpenSlash opens the menu right after a "/" typed at the start of a
-// line or after whitespace, as in Notion.
+// line or after whitespace.
 func (m *Model) maybeOpenSlash(k tea.KeyMsg) {
 	if k.Type != tea.KeyRunes || string(k.Runes) != "/" {
 		return

@@ -64,7 +64,7 @@ func TestPreviewComponent(t *testing.T) {
 
 	page := core.Page{
 		ID:      "p1",
-		Title:   "Notion Plan",
+		Title:   "Project Plan",
 		Content: "# Project Roadmap\n- [ ] Ship live preview\n- [x] Fix terminal scrolling",
 	}
 	p.SetPage(page)

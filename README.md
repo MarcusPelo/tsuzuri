@@ -4,7 +4,7 @@
 
 ### ~ 綴り • Terminal Markdown Notebook ~
 
-A Notion-style notebook for your terminal, with an NvChad look.
+A block-based notebook for your terminal, with an NvChad look.
 Your notes stay plain Markdown files.
 
 <p>
@@ -58,7 +58,7 @@ tsuzuri --list-themes
 - **Plain Markdown files.** No database or lock-in: use git, sync the folder, open notes in any editor.
 - **NvChad look.** Start screen, file tree, tabs, statusline and all 96 NvChad themes.
 - **Vim editing** with mouse support, plus VSCode-style unsaved tabs and Save As.
-- **Notion-style `/` menu** for headings, to-dos, tables, callouts, code, images and more.
+- **`/` block menu** for headings, to-dos, tables, callouts, code, images and more.
 - **Live preview** with syntax highlighting, images and cover banners drawn in the terminal.
 - **Boards, calendars, timelines, charts and forms**, stored as text and editable from the preview.
 - **Fast search** across file names and note contents.

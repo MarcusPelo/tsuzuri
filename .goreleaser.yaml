@@ -55,7 +55,7 @@ nfpms:
     homepage: https://github.com/jaisuriya-11/tsuzuri
     maintainer: Jai Suriya <jaisuriya-11@users.noreply.github.com>
     description: >-
-      Notion-style notebook for the terminal with an NvChad look, editing
+      Block-based notebook for the terminal with an NvChad look, editing
       plain Markdown files with Vim keys, live preview and themes.
     license: MIT
     formats: [deb, rpm, apk, archlinux]

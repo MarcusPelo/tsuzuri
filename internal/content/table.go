@@ -216,7 +216,7 @@ func (m *Model) tableOp(op string) bool {
 }
 
 // nextCell moves to the next (or previous) cell, adding a row after the
-// last cell, like Tab in Notion or Obsidian tables.
+// last cell, as in most table editors.
 func (m *Model) nextCell(forward bool) bool {
 	lines := strings.Split(m.textarea.Value(), "\n")
 	row, col := m.textarea.RowCol()
