@@ -83,8 +83,8 @@ go run ./cmd/tsuzuri --dir /tmp/tsuzuri-notes
 - Think about all three platforms: paths via `path/filepath`, note IDs with
   `/`, no shell commands that only exist on one OS (or provide a fallback,
   like the built-in file browser).
-- When adding or changing a key binding, update the cheatsheet in
-  `internal/app/modal.go` and the tables in the README.
+- When adding or changing a key binding, update the in-app cheatsheet in
+  `internal/app/modal.go` (the README stays short and doesn't list keys).
 
 **Tests**
 
