@@ -896,3 +896,38 @@ func TestTimelineNewItemPicksStartAndEndDates(t *testing.T) {
 		t.Fatalf("expected Launch %s -> %s:\n%s", start, end, got)
 	}
 }
+
+func TestTableEditingFromPreview(t *testing.T) {
+	h := openWith(t, "| Name | Role |\n| --- | --- |\n| Ada | Eng |")
+	h.clickText("+ Add row")
+	if got := h.text(); !strings.HasSuffix(got, "| Ada  | Eng  |\n|      |      |") {
+		t.Fatalf("+ Add row should append an empty row:\n%s", got)
+	}
+	h.clickText("+ Add column")
+	if got := h.text(); !strings.Contains(got, "| Name | Role | Column |") {
+		t.Fatalf("+ Add column should add a column:\n%s", got)
+	}
+
+	h.clickText("Ada")
+	if v := h.view(); !strings.Contains(v, "Delete row") {
+		t.Fatalf("expected the cell menu:\n%s", v)
+	}
+	h.keys("1") // Edit cell
+	for range "Ada" {
+		h.key(tea.KeyBackspace)
+	}
+	h.keys("Grace")
+	h.key(tea.KeyEnter)
+	if got := h.text(); !strings.Contains(got, "| Grace | Eng  |") {
+		t.Fatalf("cell edit not applied:\n%s", got)
+	}
+
+	h.clickText("Column")
+	if v := h.view(); strings.Contains(v, "Delete row") || !strings.Contains(v, "Rename column") {
+		t.Fatalf("header cells offer column actions only:\n%s", v)
+	}
+	h.keys("4") // Delete column
+	if got := h.text(); strings.Contains(got, "Column") {
+		t.Fatalf("column should be deleted:\n%s", got)
+	}
+}

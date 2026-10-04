@@ -198,12 +198,13 @@ func CompileHits(input string, th theme.Theme, contentWidth int, baseDir string,
 		// Tables: a header row followed by a separator row.
 		if strings.Contains(line, "|") && i+1 < len(lines) && tableSepRegex.MatchString(lines[i+1]) {
 			c.flushPara()
+			start := c.lineOffset + i
 			rows := [][]string{splitRow(line)}
 			for i += 2; i < len(lines) && strings.Contains(lines[i], "|") && strings.TrimSpace(lines[i]) != ""; i++ {
 				rows = append(rows, splitRow(lines[i]))
 			}
 			i--
-			c.table(rows)
+			c.table(rows, start)
 			continue
 		}
 
@@ -480,7 +481,9 @@ func splitRow(line string) []string {
 	return cells
 }
 
-func (c *compiler) table(rows [][]string) {
+// table draws a pipe table whose header is on document line docStart and
+// records clickable cells plus "add row / add column" buttons.
+func (c *compiler) table(rows [][]string, docStart int) {
 	cols := 0
 	for _, r := range rows {
 		cols = max(cols, len(r))
@@ -524,7 +527,22 @@ func (c *compiler) table(rows [][]string) {
 	}
 	c.blank()
 	c.emit(border("┌", "┬", "┐"))
+	lastLine := docStart
 	for i, r := range rendered {
+		docLine := docStart
+		if i > 0 {
+			docLine = docStart + 1 + i // skip the separator line
+		}
+		lastLine = docLine
+		x := 1
+		for j, w := range widths {
+			text := ""
+			if j < len(rows[i]) {
+				text = rows[i][j]
+			}
+			c.hits = append(c.hits, Hit{Row: len(c.out), H: 1, X0: x, X1: x + w + 2, Kind: "table:cell", Line: docLine, Index: j, Arg: text})
+			x += w + 3
+		}
 		var b strings.Builder
 		b.WriteString(line.Render("│"))
 		for j, cell := range r {
@@ -540,6 +558,13 @@ func (c *compiler) table(rows [][]string) {
 		}
 	}
 	c.emit(border("└", "┴", "┘"))
+	addRow := lipgloss.NewStyle().Foreground(c.st.th.Blue).Render("+ Add row")
+	addCol := lipgloss.NewStyle().Foreground(c.st.th.Blue).Render("+ Add column")
+	c.hits = append(c.hits,
+		Hit{Row: len(c.out), H: 1, X0: 0, X1: 9, Kind: "table:addrow", Line: lastLine, Index: cols - 1},
+		Hit{Row: len(c.out), H: 1, X0: 12, X1: 24, Kind: "table:addcol", Line: lastLine, Index: cols - 1},
+	)
+	c.emit(addRow + "   " + addCol)
 	c.blank()
 }
 

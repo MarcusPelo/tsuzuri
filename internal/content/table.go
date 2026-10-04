@@ -258,3 +258,31 @@ func (m *Model) nextCell(forward bool) bool {
 	}
 	return true
 }
+
+// TableOpAt runs a table operation ("addrow", "addcol", "delrow", "delcol",
+// "format") as if the cursor were in cell idx of document line row.
+func (m *Model) TableOpAt(row, idx int, op string) bool {
+	lines := strings.Split(m.textarea.Value(), "\n")
+	if row < 0 || row >= len(lines) {
+		return false
+	}
+	m.textarea.SetRowCol(row, cellStart(lines[row], idx))
+	return m.tableOp(op)
+}
+
+// SetTableCell replaces the text of cell idx on document line row and
+// re-aligns the table.
+func (m *Model) SetTableCell(row, idx int, text string) bool {
+	lines := strings.Split(m.textarea.Value(), "\n")
+	if row < 0 || row >= len(lines) || !isTableLine(lines[row]) {
+		return false
+	}
+	cells := splitCells(lines[row])
+	for len(cells) <= idx {
+		cells = append(cells, "")
+	}
+	cells[idx] = strings.ReplaceAll(strings.TrimSpace(text), "|", "\\|")
+	lines[row] = "| " + strings.Join(cells, " | ") + " |"
+	m.textarea.SetValue(strings.Join(lines, "\n"))
+	return m.TableOpAt(row, idx, "format")
+}
