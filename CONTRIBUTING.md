@@ -49,14 +49,14 @@ go run ./cmd/tsuzuri --dir /tmp/tsuzuri-notes
 | :-- | :-- |
 | `cmd/tsuzuri` | Entry point, flags, config loading |
 | `internal/app` | Root model: layout, keys, mouse, tabs, dialogs, view actions |
-| `internal/content` | Vim editor pane, `/` menu, table editing |
+| `internal/content` | Editor pane, `/` menu, table editing |
 | `internal/preview` | Markdown renderer, images, board/calendar/timeline/chart/form views |
 | `internal/sidebar` | Explorer tree |
 | `internal/dashboard` | Start screen |
 | `internal/core` | Filesystem store and messages (no UI code) |
 | `internal/highlight` | Syntax highlighting |
 | `internal/textarea` | Vendored bubbles textarea (changes marked `tsuzuri:`) |
-| `internal/theme` | Base46 palettes (`palettes_gen.go` is generated) |
+| `internal/theme` | Theme palettes (`palettes_gen.go` is generated) |
 | `internal/ui` | Exact-size layout helpers and overlays |
 | `internal/config` | Saved preferences |
 

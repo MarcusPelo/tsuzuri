@@ -4,7 +4,7 @@
 
 ### ~ 綴り • Terminal Markdown Notebook ~
 
-A block-based notebook for your terminal, with an NvChad look.
+A block-based notebook for your terminal.
 Your notes stay plain Markdown files.
 
 <p>
@@ -56,15 +56,15 @@ Press `?` inside the app to see every shortcut.
 
 ```sh
 tsuzuri --dir ~/notes          # open a specific folder
-tsuzuri --theme catppuccin     # pick a theme for this session
+tsuzuri --theme <name>         # pick a theme for this session
 tsuzuri --list-themes
 ```
 
 ## Features
 
 - **Plain Markdown files.** No database or lock-in: use git, sync the folder, open notes in any editor.
-- **NvChad look.** Start screen, file tree, tabs, statusline and all 96 NvChad themes.
-- **Vim editing** with mouse support, plus VSCode-style unsaved tabs and Save As.
+- **A full workspace.** Start screen, file tree, tabs, statusline and 96 themes.
+- **Modal keyboard editing** with mouse support, plus unsaved tabs and Save As.
 - **`/` block menu** for headings, to-dos, tables, callouts, code, images and more.
 - **Live preview** with syntax highlighting, images and cover banners drawn in the terminal.
 - **Boards, calendars, timelines, charts and forms**, stored as text and editable from the preview.
@@ -90,8 +90,8 @@ Contributions are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 Built with [Bubble Tea](https://github.com/charmbracelet/bubbletea) and
 [Lip Gloss](https://github.com/charmbracelet/lipgloss) (the editor is adapted
-from [Bubbles](https://github.com/charmbracelet/bubbles)). Themes from
-[NvChad base46](https://github.com/NvChad/base46), syntax highlighting by
+from [Bubbles](https://github.com/charmbracelet/bubbles)). Theme palettes are
+MIT-licensed community palettes, syntax highlighting by
 [chroma](https://github.com/alecthomas/chroma).
 
 ## License
