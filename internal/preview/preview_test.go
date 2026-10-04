@@ -269,3 +269,21 @@ func TestTableRowDividers(t *testing.T) {
 		t.Fatalf("no divider after the last row:\n%s", out)
 	}
 }
+
+func TestBarChartRowsAlignWithFractionalAxisLabel(t *testing.T) {
+	out := preview.Compile("```chart\ntype: bar\nA: 4\nB: 15\n```", theme.DefaultTheme(), 60)
+	var axis []int
+	for _, l := range strings.Split(ansi.Strip(out), "\n") {
+		if i := strings.IndexAny(l, "┤└"); i >= 0 {
+			axis = append(axis, ansi.StringWidth(l[:i]))
+		}
+	}
+	if len(axis) < 3 {
+		t.Fatalf("no chart axis found:\n%s", ansi.Strip(out))
+	}
+	for _, x := range axis {
+		if x != axis[0] {
+			t.Fatalf("axis must be a straight line, got columns %v (the 7.5 label shifted its row)", axis)
+		}
+	}
+}

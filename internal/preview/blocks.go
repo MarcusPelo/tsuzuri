@@ -689,7 +689,8 @@ func maxValue(data []datum) float64 {
 
 func barChart(data []datum, th theme.Theme, width, height int, hs *[]Hit) []string {
 	maxV := maxValue(data)
-	axisW := len(fmtNum(maxV)) + 1
+	// Wide enough for every axis label (max, half and 0), e.g. "7.5".
+	axisW := max(len(fmtNum(maxV)), len(fmtNum(maxV/2))) + 1
 	slot := min(max((width-axisW-1)/len(data), 2), 10)
 	bw := max(slot-1, 1)
 	plotW := slot * len(data)
