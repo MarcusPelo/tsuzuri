@@ -53,34 +53,6 @@ archives:
 checksum:
   name_template: checksums.txt
 
-# brew tap jaisuriya-11/tsuzuri https://github.com/jaisuriya-11/tsuzuri
-# brew install jaisuriya-11/tsuzuri/tsuzuri
-# This repo is its own tap: each release commits Casks/tsuzuri.rb to main.
-homebrew_casks:
-  - name: tsuzuri
-    ids: [tsuzuri]
-    binaries: [tsuzuri]
-    homepage: https://github.com/jaisuriya-11/tsuzuri
-    description: Terminal notes app that keeps your notes as plain Markdown files
-    license: MIT
-    commit_author:
-      name: goreleaserbot
-      email: bot@goreleaser.com
-    commit_msg_template: "Brew cask update for {{ .ProjectName }} version {{ .Tag }}"
-    repository:
-      owner: jaisuriya-11
-      name: tsuzuri
-      branch: main
-      token: "{{ .Env.GITHUB_TOKEN }}"
-    directory: Casks
-    # The binary is not notarized; drop the quarantine flag so macOS runs it.
-    hooks:
-      post:
-        install: |
-          if OS.mac?
-            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/tsuzuri"]
-          end
-
 snapshot:
   version_template: "{{ incpatch .Version }}-next"
 
@@ -91,12 +63,6 @@ release:
     **macOS / Linux**
     ```sh
     curl -fsSL https://raw.githubusercontent.com/jaisuriya-11/tsuzuri/main/install.sh | sh
-    ```
-
-    **Homebrew**
-    ```sh
-    brew tap jaisuriya-11/tsuzuri https://github.com/jaisuriya-11/tsuzuri
-    brew install jaisuriya-11/tsuzuri/tsuzuri
     ```
 
     **Windows (PowerShell)**
