@@ -16,11 +16,17 @@ say() { printf '%s\n' "$*"; }
 die() { printf 'tsuzuri install: %s\n' "$*" >&2; exit 1; }
 have() { command -v "$1" >/dev/null 2>&1; }
 
-fetch() { # fetch URL OUTFILE
+# fetch URL OUTFILE [quiet]. GitHub's download host resolves to several
+# addresses; when one of them doesn't answer, a short connect timeout makes
+# curl move on to the next instead of hanging for the OS default (75s on
+# macOS). A progress bar shows when a person is watching.
+fetch() {
 	if have curl; then
-		curl -fsSL "$1" -o "$2"
+		progress=-s
+		if [ -t 2 ] && [ -z "${3:-}" ]; then progress=-#; fi
+		curl -fSL $progress --connect-timeout 5 --retry 3 --retry-delay 1 "$1" -o "$2"
 	elif have wget; then
-		wget -qO "$2" "$1"
+		wget -q --timeout=5 --tries=3 -O "$2" "$1"
 	else
 		die "need curl or wget"
 	fi
@@ -49,12 +55,13 @@ else
 fi
 
 tmp=$(mktemp -d)
-trap 'rm -rf "$tmp"' EXIT INT TERM
+trap 'rm -rf "$tmp"' EXIT
+trap 'echo; die "cancelled"' INT TERM
 
 say "Downloading Tsuzuri ($version) for $os..."
 fetch "$base/$archive" "$tmp/$archive" || die "download failed: $base/$archive"
 
-if fetch "$base/checksums.txt" "$tmp/checksums.txt" 2>/dev/null; then
+if fetch "$base/checksums.txt" "$tmp/checksums.txt" quiet 2>/dev/null; then
 	want=$(grep " $archive\$" "$tmp/checksums.txt" | cut -d ' ' -f 1)
 	if have sha256sum; then
 		got=$(sha256sum "$tmp/$archive" | cut -d ' ' -f 1)
