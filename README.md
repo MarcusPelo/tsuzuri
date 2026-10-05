@@ -28,13 +28,6 @@ https://github.com/user-attachments/assets/86768fcb-3852-4e6b-8b07-6341bd9b3739
 curl -fsSL https://raw.githubusercontent.com/jaisuriya-11/tsuzuri/main/install.sh | sh
 ```
 
-**Homebrew** (macOS and Linux)
-
-```sh
-brew tap jaisuriya-11/tsuzuri https://github.com/jaisuriya-11/tsuzuri
-brew install jaisuriya-11/tsuzuri/tsuzuri
-```
-
 **Windows** (PowerShell)
 
 ```powershell
