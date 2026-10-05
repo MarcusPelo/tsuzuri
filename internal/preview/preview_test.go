@@ -287,3 +287,55 @@ func TestBarChartRowsAlignWithFractionalAxisLabel(t *testing.T) {
 		}
 	}
 }
+
+func TestChartRobustness(t *testing.T) {
+	th := theme.DefaultTheme()
+	cases := []struct {
+		name string
+		md   string
+	}{
+		{
+			name: "hbar negative value",
+			md:   "```chart\ntype: hbar\nA: -1\n```",
+		},
+		{
+			name: "hbar all negative values",
+			md:   "```chart\ntype: hbar\nA: -5\nB: -10\n```",
+		},
+		{
+			name: "bar negative values",
+			md:   "```chart\ntype: bar\nA: -5\nB: 10\n```",
+		},
+		{
+			name: "bar all negative values",
+			md:   "```chart\ntype: bar\nA: -5\nB: -10\n```",
+		},
+		{
+			name: "NaN value",
+			md:   "```chart\nA: NaN\n```",
+		},
+		{
+			name: "line NaN value",
+			md:   "```chart\ntype: line\nA: NaN\nB: 1\n```",
+		},
+		{
+			name: "line Inf value",
+			md:   "```chart\ntype: line\nA: Inf\nB: 1\n```",
+		},
+		{
+			name: "pie negative and NaN",
+			md:   "```chart\ntype: pie\nA: -1\nB: NaN\nC: 5\n```",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			defer func() {
+				if r := recover(); r != nil {
+					t.Fatalf("chart panicked on %s: %v", tc.name, r)
+				}
+			}()
+			_ = preview.Compile(tc.md, th, 80)
+		})
+	}
+}

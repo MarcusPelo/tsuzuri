@@ -637,7 +637,7 @@ func renderChart(body []string, th theme.Theme, width int, hs *[]Hit) []string {
 			continue
 		}
 		f, err := strconv.ParseFloat(strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(v), "%")), 64)
-		if err != nil {
+		if err != nil || math.IsNaN(f) || math.IsInf(f, 0) {
 			continue
 		}
 		data = append(data, datum{strings.TrimSpace(k), f, i})
@@ -697,10 +697,13 @@ func barChart(data []datum, th theme.Theme, width, height int, hs *[]Hit) []stri
 	px := canvas(plotW, height*2)
 	cols := palette(th)
 	for i, d := range data {
-		h := int(math.Round(d.value / maxV * float64(height*2)))
+		h := int(math.Round(math.Max(d.value, 0) / maxV * float64(height*2)))
+		h = max(0, min(height*2, h))
 		for y := height*2 - h; y < height*2; y++ {
 			for x := i * slot; x < i*slot+bw; x++ {
-				px[y][x] = cols[i%len(cols)]
+				if y >= 0 && y < len(px) && x >= 0 && x < len(px[y]) {
+					px[y][x] = cols[i%len(cols)]
+				}
 			}
 		}
 	}
@@ -745,10 +748,10 @@ func hbarChart(data []datum, th theme.Theme, width int, hs *[]Hit) []string {
 	cols := palette(th)
 	var out []string
 	for i, d := range data {
-		n := d.value / maxV * float64(barW)
-		full := int(n)
+		n := math.Max(d.value, 0) / maxV * float64(barW)
+		full := max(0, min(int(n), barW))
 		bar := strings.Repeat("█", full)
-		if frac := n - float64(full); frac > 0.5 {
+		if frac := n - float64(full); frac > 0.5 && full < barW {
 			bar += "▌"
 		}
 		addHit(hs, Hit{Row: len(out), X1: width, Kind: "chart:value", Line: d.line, Arg: d.label})
@@ -777,6 +780,8 @@ func lineChart(data []datum, th theme.Theme, width, height int, hs *[]Hit) []str
 			x = i * (plotW - 1) / (len(data) - 1)
 		}
 		y := ph - 1 - int(math.Round((data[i].value-minV)/(maxV-minV)*float64(ph-1)))
+		x = max(0, min(plotW-1, x))
+		y = max(0, min(ph-1, y))
 		return x, y
 	}
 	for i := 0; i < len(data); i++ {

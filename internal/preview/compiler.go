@@ -143,7 +143,13 @@ func CompileWith(input string, th theme.Theme, contentWidth int, baseDir string,
 
 // CompileHits compiles and also returns the clickable regions of view
 // blocks (rows in the output, lines in the original document).
-func CompileHits(input string, th theme.Theme, contentWidth int, baseDir string, cal CalendarView) (string, []Hit) {
+func CompileHits(input string, th theme.Theme, contentWidth int, baseDir string, cal CalendarView) (out string, hits []Hit) {
+	defer func() {
+		if r := recover(); r != nil {
+			out = fmt.Sprintf("Error rendering preview: %v", r)
+			hits = nil
+		}
+	}()
 	if contentWidth < 10 {
 		contentWidth = 40
 	}
