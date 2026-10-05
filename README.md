@@ -15,7 +15,8 @@ Your notes stay plain Markdown files.
 
 
 
-https://github.com/user-attachments/assets/86768fcb-3852-4e6b-8b07-6341bd9b3739
+
+https://github.com/user-attachments/assets/edccf6de-940e-43ad-a4c2-cf73a77d7a37
 
 
 </div>
