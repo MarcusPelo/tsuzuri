@@ -79,7 +79,7 @@ func main() {
 
 	appModel := app.New(store, app.WithTheme(themeName), app.WithConfigPath(cfgPath))
 
-	p := tea.NewProgram(appModel, tea.WithAltScreen(), tea.WithMouseCellMotion())
+	p := tea.NewProgram(appModel, tea.WithAltScreen(), tea.WithMouseAllMotion())
 	if _, err := p.Run(); err != nil {
 		log.Printf("Fatal error running program: %v\n", err)
 		fmt.Fprintf(os.Stderr, "Error running Tsuzuri application: %v\n", err)

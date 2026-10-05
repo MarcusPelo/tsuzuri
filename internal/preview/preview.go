@@ -28,6 +28,32 @@ type Model struct {
 	pendingZ   bool
 	focused    bool
 	ready      bool
+	margin     int // blank columns left of the page
+
+	blocks   []Block
+	hover    int  // block under the mouse, -1 if none
+	drag     int  // block being dragged, -1 if none
+	dropLine int  // document line the dragged block would move to
+	dropRow  int  // content row of the drop marker
+	dropGap  bool // the marker sits on a blank row between blocks
+}
+
+// pageWidth is the widest the preview text gets; wider panes centre the
+// page with equal margins, like a sheet of paper.
+const pageWidth = 88
+
+// pageMargin returns the left margin for a pane w columns wide. It is
+// wide enough for the block handles ("⠿" from 40 columns, "+ ⠿" from 70),
+// and grows to centre the page once the pane is wider than pageWidth.
+func pageMargin(w int) int {
+	minMargin := 1
+	switch {
+	case w >= 70:
+		minMargin = 4
+	case w >= 40:
+		minMargin = 2
+	}
+	return max((w-pageWidth)/2, minMargin)
 }
 
 // New constructs a Preview Model.
@@ -39,6 +65,9 @@ func New(th theme.Theme) Model {
 		theme:    th,
 		viewport: vp,
 		title:    "Untitled",
+		hover:    -1,
+		drag:     -1,
+		dropRow:  -1,
 	}
 }
 
@@ -47,8 +76,8 @@ func (m *Model) SetSize(w, h int) {
 	m.width = max(w, 0)
 	m.height = max(h, 0)
 
-	// One column of padding on each side.
-	m.viewport.Width = max(w-2, 10)
+	m.margin = pageMargin(m.width)
+	m.viewport.Width = max(m.width-2*m.margin, 10)
 	m.viewport.Height = max(h, 1)
 	m.ready = true
 	m.recompile()
@@ -113,10 +142,16 @@ func (m *Model) SetFocused(focused bool) {
 func (m *Model) recompile() {
 	vpWidth := m.viewport.Width
 	if vpWidth <= 0 {
-		vpWidth = m.width - 2
+		vpWidth = m.width - 2*m.margin
 	}
-	compiled, hits := CompileHits(m.rawContent, m.theme, vpWidth, m.baseDir, m.cal)
-	m.hits = hits
+	compiled, hits, blocks := CompileBlocks(m.rawContent, m.theme, vpWidth, m.baseDir, m.cal)
+	m.hits, m.blocks = hits, blocks
+	if m.hover >= len(blocks) {
+		m.hover = -1
+	}
+	if m.drag >= len(blocks) {
+		m.drag, m.dropRow = -1, -1
+	}
 	m.viewport.SetContent(compiled)
 }
 
@@ -153,7 +188,7 @@ type HitMsg struct{ Hit Hit }
 // HitAt returns the view element under pane coordinates (x, y).
 func (m Model) HitAt(x, y int) (Hit, bool) {
 	row := m.viewport.YOffset + y
-	col := x - 1 // one column of left padding
+	col := x - m.margin
 	for i := len(m.hits) - 1; i >= 0; i-- {
 		h := m.hits[i]
 		if row >= h.Row && row < h.Row+h.H && col >= h.X0 && col < h.X1 {
@@ -197,6 +232,9 @@ func (m *Model) ScrollBy(n int) {
 func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.MouseMsg:
+		if cmd, ok := m.mouse(msg); ok {
+			return m, cmd
+		}
 		switch msg.Button {
 		case tea.MouseButtonWheelUp:
 			m.ScrollBy(-3)
@@ -262,11 +300,13 @@ func (m Model) View() string {
 		msg := lipgloss.NewStyle().Foreground(th.GreyFg).Render("Nothing to preview")
 		body = lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, msg)
 	} else {
-		body = ui.Fit(m.viewport.View(), m.width-2, m.height, plain)
+		body = ui.Fit(m.viewport.View(), m.viewport.Width, m.height, plain)
+		pad := strings.Repeat(" ", m.margin)
 		lines := strings.Split(body, "\n")
 		for i, l := range lines {
-			lines[i] = " " + l + " "
+			lines[i] = pad + l
 		}
+		m.decorate(lines)
 		body = strings.Join(lines, "\n")
 	}
 	return ui.Fit(body, m.width, m.height, plain)

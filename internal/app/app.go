@@ -79,6 +79,9 @@ type Model struct {
 	toastSeq int
 	dragging bool // a mouse drag started in the editor
 
+	split    Split   // dragged divider positions
+	resizing divider // the divider being dragged, if any
+
 	dashboard dashboard.Model
 	sidebar   sidebar.Model
 	content   content.Model
@@ -147,7 +150,7 @@ func (m Model) Init() tea.Cmd {
 }
 
 func (m *Model) layout() Layout {
-	return CalculateLayout(m.width, m.height, m.sidebarOpen, m.previewOpen)
+	return CalculateLayout(m.width, m.height, m.sidebarOpen, m.previewOpen, m.split)
 }
 
 // updateLayout recalculates dimensions across child panes.
@@ -339,6 +342,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.openFinder()
 	case preview.HitMsg:
 		return m, m.handleViewHit(msg.Hit)
+	case preview.MoveBlockMsg:
+		if m.activeBuffer() != nil {
+			m.setDocLines(moveBlock(m.docLines(), msg.Line, msg.End, msg.To))
+		}
+		return m, nil
+	case preview.AddBlockMsg:
+		return m, m.addBlockAfter(msg.After)
 	case core.CopyMsg:
 		return m, m.copyText(msg.Text)
 	case toastExpiredMsg:
@@ -674,10 +684,31 @@ func (m *Model) handleMouse(msg tea.MouseMsg) tea.Cmd {
 		return nil
 	}
 	l := m.layout()
+	if m.resizing != dividerNone {
+		switch msg.Action {
+		case tea.MouseActionMotion:
+			m.dragDivider(msg.X)
+		case tea.MouseActionRelease:
+			m.resizing = dividerNone
+		}
+		return nil
+	}
 	// Drags that start in the editor keep going there (text selection).
 	if msg.Action == tea.MouseActionMotion || msg.Action == tea.MouseActionRelease {
 		if !m.dragging {
-			return nil
+			// Hover shows the preview's block handles; a block drag keeps
+			// going wherever the mouse goes.
+			overPreview := l.PreviewW > 0 && msg.X >= l.PreviewX && msg.Y >= l.BodyY && msg.Y < l.BodyY+l.BodyH
+			if !overPreview && !m.preview.Dragging() {
+				m.preview.ClearHover()
+				return nil
+			}
+			local := msg
+			local.X -= l.PreviewX
+			local.Y -= l.BodyY
+			var cmd tea.Cmd
+			m.preview, cmd = m.preview.Update(local)
+			return cmd
 		}
 		if msg.Action == tea.MouseActionRelease {
 			m.dragging = false
@@ -715,8 +746,11 @@ func (m *Model) handleMouse(msg tea.MouseMsg) tea.Cmd {
 		target, local.X = focusEditor, msg.X-l.EditorX
 	case l.PreviewW > 0 && msg.X >= l.PreviewX:
 		target, local.X = focusPreview, msg.X-l.PreviewX
-	default:
-		return nil // a divider
+	default: // a divider
+		if msg.Button == tea.MouseButtonLeft {
+			m.resizing = dividerAt(l, msg.X)
+		}
+		return nil
 	}
 
 	var cmds []tea.Cmd
@@ -734,6 +768,49 @@ func (m *Model) handleMouse(msg tea.MouseMsg) tea.Cmd {
 		m.preview, cmd = m.preview.Update(local)
 	}
 	return tea.Batch(append(cmds, cmd)...)
+}
+
+// divider names a draggable pane divider.
+type divider int
+
+const (
+	dividerNone    divider = iota
+	dividerSidebar         // between the explorer and the editor
+	dividerPreview         // between the editor and the preview
+)
+
+// dividerAt returns the divider in screen column x.
+func dividerAt(l Layout, x int) divider {
+	switch {
+	case l.SidebarW > 0 && x == l.SidebarW:
+		return dividerSidebar
+	case l.PreviewW > 0 && x == l.PreviewX-1:
+		return dividerPreview
+	}
+	return dividerNone
+}
+
+// dragDivider moves the divider being dragged to screen column x.
+func (m *Model) dragDivider(x int) {
+	l := m.layout()
+	switch m.resizing {
+	case dividerSidebar:
+		m.split.SidebarW = x
+	case dividerPreview:
+		if avail := l.EditorW + l.PreviewW; avail > 0 {
+			m.split.EditorFrac = float64(x-l.EditorX) / float64(avail)
+		}
+	}
+	m.updateLayout()
+	// Keep the stored position inside the limits the layout applied, so a
+	// drag past the edge doesn't need to travel back before it moves again.
+	l = m.layout()
+	if m.resizing == dividerSidebar && l.SidebarW > 0 {
+		m.split.SidebarW = l.SidebarW
+	}
+	if m.resizing == dividerPreview && l.EditorW+l.PreviewW > 0 {
+		m.split.EditorFrac = float64(l.EditorW) / float64(l.EditorW+l.PreviewW)
+	}
 }
 
 func (m *Model) handleTabClick(msg tea.MouseMsg) tea.Cmd {
@@ -789,14 +866,20 @@ func (m Model) View() string {
 		screen = lipgloss.JoinVertical(lipgloss.Left, m.dashboard.View(), m.bottomBar())
 	} else {
 		l := m.layout()
-		div := ui.Column("│", l.BodyH, lipgloss.NewStyle().Foreground(m.theme.Line))
+		div := func(d divider) string {
+			c := m.theme.Line
+			if m.resizing == d {
+				c = m.theme.Blue
+			}
+			return ui.Column("│", l.BodyH, lipgloss.NewStyle().Foreground(c))
+		}
 		var cols []string
 		if l.SidebarW > 0 {
-			cols = append(cols, m.sidebar.View(), div)
+			cols = append(cols, m.sidebar.View(), div(dividerSidebar))
 		}
 		cols = append(cols, m.content.View())
 		if l.PreviewW > 0 {
-			cols = append(cols, div, m.preview.View())
+			cols = append(cols, div(dividerPreview), m.preview.View())
 		}
 		tabs, _ := m.tabline()
 		screen = lipgloss.JoinVertical(lipgloss.Left,
