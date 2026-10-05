@@ -64,12 +64,35 @@ tsuzuri --list-themes
 ## Features
 
 - **Plain Markdown files.** No database or lock-in: use git, sync the folder, open notes in any editor.
-- **A full workspace.** Start screen, file tree, tabs, statusline and 96 themes.
+- **A full workspace.** Start screen, file tree, tabs, statusline and 97 themes.
 - **Modal keyboard editing** with mouse support, plus unsaved tabs and Save As.
 - **`/` block menu** for headings, to-dos, tables, callouts, code, images and more.
 - **Live preview** with syntax highlighting, images and cover banners drawn in the terminal.
 - **Boards, calendars, timelines, charts and forms**, stored as text and editable from the preview.
 - **Fast search** across file names and note contents.
+
+## Custom themes
+
+Drop a JSON palette into the themes folder in your user config directory:
+
+- **Linux:** `~/.config/tsuzuri/themes/<name>.json`
+- **macOS:** `~/Library/Application Support/tsuzuri/themes/<name>.json`
+- **Windows:** `%APPDATA%\tsuzuri\themes\<name>.json`
+
+User themes appear automatically in the live theme picker (`Space` `t`) and in `--list-themes`. Bundled themes take precedence on a name collision.
+
+Example `~/.config/tsuzuri/themes/minimal.json`:
+
+```json
+{
+  "light": false,
+  "fg": "#d8dee9",
+  "bg": "#2e3440",
+  "darker_bg": "#242933",
+  "line": "#3b4252",
+  "blue": "#88c0d0"
+}
+```
 
 ## Uninstall
 

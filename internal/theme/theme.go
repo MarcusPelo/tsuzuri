@@ -3,7 +3,12 @@
 package theme
 
 import (
+	"encoding/json"
+	"os"
+	"path/filepath"
 	"sort"
+	"strings"
+	"sync"
 
 	"github.com/charmbracelet/lipgloss"
 )
@@ -63,16 +68,100 @@ const DefaultName = "onedark"
 
 // palette is one NvChad base46 "base_30" colour table.
 type palette struct {
-	Light bool
-	Fg, DarkerBg, Bg, Bg2, OneBg, OneBg2, OneBg3, Grey, GreyFg, GreyFg2,
-	LightGrey, Red, Pink, Line, Green, NordBlue, Blue, Yellow, Purple,
-	DarkPurple, Teal, Orange, Cyan, StatusBg, LightBg, Folder string
+	Light      bool   `json:"light"`
+	Fg         string `json:"fg"`
+	DarkerBg   string `json:"darker_bg"`
+	Bg         string `json:"bg"`
+	Bg2        string `json:"bg2"`
+	OneBg      string `json:"one_bg"`
+	OneBg2     string `json:"one_bg2"`
+	OneBg3     string `json:"one_bg3"`
+	Grey       string `json:"grey"`
+	GreyFg     string `json:"grey_fg"`
+	GreyFg2    string `json:"grey_fg2"`
+	LightGrey  string `json:"light_grey"`
+	Red        string `json:"red"`
+	Pink       string `json:"pink"`
+	Line       string `json:"line"`
+	Green      string `json:"green"`
+	NordBlue   string `json:"nord_blue"`
+	Blue       string `json:"blue"`
+	Yellow     string `json:"yellow"`
+	Purple     string `json:"purple"`
+	DarkPurple string `json:"dark_purple"`
+	Teal       string `json:"teal"`
+	Orange     string `json:"orange"`
+	Cyan       string `json:"cyan"`
+	StatusBg   string `json:"status_bg"`
+	LightBg    string `json:"light_bg"`
+	Folder     string `json:"folder"`
 }
 
-// Names lists every bundled theme, sorted.
+var (
+	userThemesOnce sync.Once
+	userThemes     map[string]palette
+	userThemesDir  = defaultUserThemesDir
+)
+
+func defaultUserThemesDir() string {
+	dir, err := os.UserConfigDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(dir, "tsuzuri", "themes")
+}
+
+// UserThemesDir returns the path to user-defined themes in the OS user config directory
+// ($XDG_CONFIG_HOME/tsuzuri/themes on Linux, ~/Library/Application Support/tsuzuri/themes
+// on macOS, and %APPDATA%\tsuzuri\themes on Windows).
+// Bundled themes take precedence over user themes on name collision.
+func UserThemesDir() string {
+	return userThemesDir()
+}
+
+func loadUserThemes() map[string]palette {
+	userThemesOnce.Do(func() {
+		userThemes = make(map[string]palette)
+		dir := userThemesDir()
+		if dir == "" {
+			return
+		}
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			return
+		}
+		for _, e := range entries {
+			if e.IsDir() || !strings.HasSuffix(strings.ToLower(e.Name()), ".json") {
+				continue
+			}
+			name := strings.TrimSuffix(strings.ToLower(e.Name()), ".json")
+			if _, exists := palettes[name]; exists {
+				continue // bundled themes win on name collision
+			}
+			data, err := os.ReadFile(filepath.Join(dir, e.Name()))
+			if err != nil {
+				continue
+			}
+			var p palette
+			if err := json.Unmarshal(data, &p); err == nil && p.Fg != "" && p.Bg != "" {
+				userThemes[name] = p
+			}
+		}
+	})
+	return userThemes
+}
+
+// Names lists every available theme (bundled and user-defined), sorted.
 func Names() []string {
-	names := make([]string, 0, len(palettes))
+	namesMap := make(map[string]struct{}, len(palettes))
 	for n := range palettes {
+		namesMap[n] = struct{}{}
+	}
+	for n := range loadUserThemes() {
+		namesMap[n] = struct{}{}
+	}
+	names := make([]string, 0, len(namesMap))
+	for n := range namesMap {
 		names = append(names, n)
 	}
 	sort.Strings(names)
@@ -87,9 +176,14 @@ func DefaultTheme() Theme {
 
 // Get returns the named theme; ok is false for unknown names.
 func Get(name string) (Theme, bool) {
-	p, ok := palettes[name]
+	norm := strings.ToLower(strings.TrimSpace(name))
+	p, ok := palettes[norm]
 	if !ok {
-		return Theme{}, false
+		u := loadUserThemes()
+		p, ok = u[norm]
+		if !ok {
+			return Theme{}, false
+		}
 	}
 	c := func(hex string) lipgloss.Color { return lipgloss.Color(hex) }
 	t := Theme{
