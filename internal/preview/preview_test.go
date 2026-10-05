@@ -1,6 +1,7 @@
 package preview_test
 
 import (
+	"fmt"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 	"strings"
@@ -337,5 +338,199 @@ func TestChartRobustness(t *testing.T) {
 			}()
 			_ = preview.Compile(tc.md, th, 80)
 		})
+	}
+}
+
+func TestPreviewCentresPageInWidePane(t *testing.T) {
+	p := preview.New(theme.DefaultTheme())
+	p.SetSize(140, 20)
+	p.SetPage(core.Page{ID: "p1", Content: "Hello paper"})
+
+	lines := strings.Split(ansi.Strip(p.View()), "\n")
+	var line string
+	for _, l := range lines {
+		if strings.Contains(l, "Hello paper") {
+			line = l
+			break
+		}
+	}
+	if line == "" {
+		t.Fatalf("paragraph not rendered:\n%s", strings.Join(lines, "\n"))
+	}
+	// (140 - 88) / 2 = 26 columns of margin on the left.
+	if got := len(line) - len(strings.TrimLeft(line, " ")); got != 26 {
+		t.Errorf("left margin = %d, want 26", got)
+	}
+	if w := ansi.StringWidth(lines[0]); w != 140 {
+		t.Errorf("line width = %d, want 140", w)
+	}
+}
+
+func TestColumnsBlock(t *testing.T) {
+	th := theme.DefaultTheme()
+	md := "~~~columns\nLeft side\n+++\nRight side\n+++\n```chart\ntype: hbar\nA: 3\n```\n~~~"
+
+	out, hits := preview.CompileHits(md, th, 88, "", preview.CalendarView{})
+	lines := strings.Split(ansi.Strip(out), "\n")
+	row := -1
+	for i, l := range lines {
+		if strings.Contains(l, "Left side") {
+			row = i
+		}
+	}
+	if row < 0 || !strings.Contains(lines[row], "Right side") {
+		t.Fatalf("expected columns side by side:\n%s", strings.Join(lines, "\n"))
+	}
+	// 88 columns, 3 parts, gap 3: each column is 27 wide.
+	if x := strings.Index(lines[row], "Right side"); x != 30 {
+		t.Errorf("second column starts at %d, want 30", x)
+	}
+
+	var bar *preview.Hit
+	for i := range hits {
+		if hits[i].Kind == "chart:value" {
+			bar = &hits[i]
+		}
+	}
+	if bar == nil {
+		t.Fatal("chart inside a column lost its clickable bars")
+	}
+	if bar.X0 != 60 || bar.Line != 7 || bar.Block != 5 || bar.End != 8 {
+		t.Errorf("chart hit not mapped to the document: %+v", *bar)
+	}
+
+	// A narrow pane stacks the columns.
+	out, _ = preview.CompileHits(md, th, 30, "", preview.CalendarView{})
+	for _, l := range strings.Split(ansi.Strip(out), "\n") {
+		if strings.Contains(l, "Left side") && strings.Contains(l, "Right side") {
+			t.Errorf("expected stacked columns at width 30, got %q", l)
+		}
+	}
+}
+
+func TestFlowBlock(t *testing.T) {
+	th := theme.DefaultTheme()
+	md := "```flow\nstart([Start]) --> check{Is it working?}\ncheck -->|yes| done([Ship it])\ncheck -- no --> fix[Fix it]\nfix --> check\n```"
+	out := ansi.Strip(preview.Compile(md, th, 88))
+	for _, want := range []string{"(  Start  )", "<  Is it working?  >", "│ Fix it ├", "▼", "◀", "yes", "no"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("flowchart missing %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "-->") {
+		t.Errorf("flow source shown instead of the diagram:\n%s", out)
+	}
+
+	// Mermaid flowcharts render too; other Mermaid diagrams stay code.
+	out = ansi.Strip(preview.Compile("```mermaid\ngraph TD\nA[One] --> B[Two]\n```", th, 88))
+	if !strings.Contains(out, "│ One │") || !strings.Contains(out, "│ Two │") {
+		t.Errorf("mermaid flowchart not drawn:\n%s", out)
+	}
+
+	// Every Mermaid node shape gets its own outline, and dotted/thick edges
+	// keep their style.
+	shapes := "```flow\na[[Sub]] -.-> b[(Data)]\nb ==> c((Hub))\nc --> d{{Hex}}\nd --> e(Round)\n```"
+	out = ansi.Strip(preview.Compile(shapes, th, 88))
+	for _, want := range []string{"│ │ Sub │ │", "│╰────╯│", "│ Data │", "│  Hub  │", "<  Hex  >", "│ Round │", "┆", "┃"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("shape missing %q:\n%s", want, out)
+		}
+	}
+	out = ansi.Strip(preview.Compile("```mermaid\nsequenceDiagram\nA->>B: hi\n```", th, 88))
+	if !strings.Contains(out, "sequenceDiagram") {
+		t.Errorf("non-flowchart mermaid should stay a code block:\n%s", out)
+	}
+
+	// Wide graphs shrink their boxes to fit, and odd input never breaks the
+	// preview.
+	var wide strings.Builder
+	wide.WriteString("```flow\n")
+	for i := range 8 {
+		fmt.Fprintf(&wide, "root --> n%d[A fairly long box label %d]\n", i, i)
+	}
+	wide.WriteString("```")
+	for _, md := range []string{wide.String(), "```flow\na --> a\n```", "```flow\n```", "```flow\n--> [x] {{\n```"} {
+		out := preview.Compile(md, th, 60)
+		if strings.Contains(out, "Error rendering preview") {
+			t.Errorf("flow %q broke the preview: %s", md, out)
+		}
+	}
+}
+
+func TestFlowLeftToRight(t *testing.T) {
+	th := theme.DefaultTheme()
+	md := "```mermaid\ngraph LR\nlogin[Login] -- submit --> auth{Valid?}\nauth -->|no| login\nauth -->|yes| home((Dashboard))\n```"
+	out := ansi.Strip(preview.Compile(md, th, 88))
+	var row string
+	for _, l := range strings.Split(out, "\n") {
+		if strings.Contains(l, "Login") {
+			row = l
+		}
+	}
+	// All three boxes share a row, joined by labelled arrows.
+	for _, want := range []string{"│ Login ├", "submit─▶", "<  Valid?  >", "yes─▶", "Dashboard"} {
+		if !strings.Contains(row, want) {
+			t.Errorf("LR row missing %q: %q\n%s", want, row, out)
+		}
+	}
+	if !strings.Contains(out, "▲") || !strings.Contains(out, " no") {
+		t.Errorf("loop back to Login not drawn underneath:\n%s", out)
+	}
+
+	// Too wide for the pane: drawn top to bottom instead.
+	var long strings.Builder
+	long.WriteString("```flow\ngraph LR\n")
+	for i := range 6 {
+		fmt.Fprintf(&long, "s%d[Step number %d] --> s%d[Step number %d]\n", i, i, i+1, i+1)
+	}
+	long.WriteString("```")
+	out = ansi.Strip(preview.Compile(long.String(), th, 60))
+	if !strings.Contains(out, "▼") || strings.Contains(out, "▶") {
+		t.Errorf("wide LR diagram should fall back to top-down:\n%s", out)
+	}
+}
+
+func TestBlocksAndDrag(t *testing.T) {
+	th := theme.DefaultTheme()
+	md := "# Title\n\nFirst para\nstill first\n\n- item\n  - child\n- other\n\n```go\nx := 1\n```\n\n| a | b |\n| - | - |\n| 1 | 2 |"
+	_, _, blocks := preview.CompileBlocks(md, th, 80, "", preview.CalendarView{})
+	want := [][2]int{{0, 1}, {2, 4}, {5, 7}, {6, 7}, {7, 8}, {9, 12}, {13, 16}}
+	if len(blocks) != len(want) {
+		t.Fatalf("got %d blocks %+v, want %d", len(blocks), blocks, len(want))
+	}
+	for i, w := range want {
+		if blocks[i].Line != w[0] || blocks[i].End != w[1] {
+			t.Errorf("block %d covers lines [%d,%d), want [%d,%d)", i, blocks[i].Line, blocks[i].End, w[0], w[1])
+		}
+	}
+
+	// Hover the code block, grab its handle and drop it above the title.
+	p := preview.New(th)
+	p.SetSize(80, 40) // margin 4: "+" at column 0, "⠿" at 2
+	p.SetPage(core.Page{ID: "p1", Content: md})
+	code := blocks[5]
+	p, _ = p.Update(tea.MouseMsg{X: 10, Y: code.Row, Action: tea.MouseActionMotion})
+	if v := ansi.Strip(p.View()); !strings.Contains(strings.Split(v, "\n")[code.Row], "+ ⠿") {
+		t.Fatalf("no handle on the hovered block:\n%s", v)
+	}
+	p, _ = p.Update(tea.MouseMsg{X: 2, Y: code.Row, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
+	if !p.Dragging() {
+		t.Fatal("pressing the handle should start a drag")
+	}
+	p, _ = p.Update(tea.MouseMsg{X: 2, Y: 0, Button: tea.MouseButtonLeft, Action: tea.MouseActionMotion})
+	p, cmd := p.Update(tea.MouseMsg{X: 2, Y: 0, Button: tea.MouseButtonLeft, Action: tea.MouseActionRelease})
+	if cmd == nil {
+		t.Fatal("drop sent nothing")
+	}
+	got, ok := cmd().(preview.MoveBlockMsg)
+	if !ok || got != (preview.MoveBlockMsg{Line: 9, End: 12, To: 0}) {
+		t.Errorf("drop = %#v, want move of lines [9,12) to 0", got)
+	}
+
+	// "+" asks for a new block after the hovered one.
+	p, _ = p.Update(tea.MouseMsg{X: 10, Y: blocks[0].Row, Action: tea.MouseActionMotion})
+	_, cmd = p.Update(tea.MouseMsg{X: 0, Y: blocks[0].Row, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
+	if cmd == nil || cmd() != (preview.AddBlockMsg{After: 1}) {
+		t.Error("+ should add a block after the title")
 	}
 }

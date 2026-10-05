@@ -67,9 +67,44 @@ tsuzuri --list-themes
 - **A full workspace.** Start screen, file tree, tabs, statusline and 97 themes.
 - **Modal keyboard editing** with mouse support, plus unsaved tabs and Save As.
 - **`/` block menu** for headings, to-dos, tables, callouts, code, images and more.
-- **Live preview** with syntax highlighting, images and cover banners drawn in the terminal.
+- **Live preview** laid out like a page, with syntax highlighting, images and cover banners drawn in the terminal.
+- **Drag blocks to reorder them** in the preview by their `⠿` handle, or add one below with `+`, like Notion.
 - **Boards, calendars, timelines, charts and forms**, stored as text and editable from the preview.
+- **Flowcharts** from Mermaid syntax (`graph TD` / `graph LR`), drawn with real shapes: boxes, decisions, circles, databases.
+- **2, 3 and 4 column layouts** from the `/` menu.
+- **Resizable panes**: drag the dividers between the explorer, editor and preview.
 - **Fast search** across file names and note contents.
+
+## Flowcharts
+
+Write a `flow` (or `mermaid`) code block and the preview draws it:
+
+````md
+```flow
+graph LR
+start([Start]) --> check{Is it working?}
+check -->|yes| done([Ship it])
+check -->|no| fix[Fix it]
+fix --> check
+```
+````
+
+Shapes: `[box]`, `(rounded)`, `([stadium])`, `{decision}`, `{{hexagon}}`, `((circle))`, `[(database)]`, `[[subroutine]]`.
+Arrows: `-->`, `-.->` (dotted), `==>` (thick), with labels as `-->|yes|` or `-- yes -->`.
+
+## Columns
+
+Type `/2 columns` (or 3, 4). Each `+++` line starts a new column, and each column is ordinary Markdown:
+
+```md
+~~~columns
+## Todo
+- [ ] Write the docs
++++
+## Notes
+Columns stack on narrow screens.
+~~~
+```
 
 ## Custom themes
 

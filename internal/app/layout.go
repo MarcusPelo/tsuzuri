@@ -10,6 +10,12 @@ const (
 	// minPreviewTotal is the narrowest terminal that still shows the preview.
 	minPreviewTotal = 90
 
+	// minSidebarW and maxSidebarW bound a dragged explorer width.
+	minSidebarW = 16
+	maxSidebarW = 60
+	// minPaneW is the narrowest a divider drag may make the editor or preview.
+	minPaneW = 20
+
 	tablineHeight = 1
 	footerHeight  = 1 // statusline (the ":" prompt takes its place while typing)
 )
@@ -26,9 +32,16 @@ type Layout struct {
 	BodyH    int
 }
 
+// Split holds where the user dragged the pane dividers. Zero values mean the
+// defaults: a SidebarWidth explorer and an even editor/preview split.
+type Split struct {
+	SidebarW   int     // explorer width
+	EditorFrac float64 // editor's share of the editor+preview width
+}
+
 // CalculateLayout splits the window into explorer, editor and preview. A
 // one-column divider separates neighbouring panes.
-func CalculateLayout(totalWidth, totalHeight int, sidebarOpen, previewOpen bool) Layout {
+func CalculateLayout(totalWidth, totalHeight int, sidebarOpen, previewOpen bool, split Split) Layout {
 	l := Layout{BodyY: tablineHeight, BodyH: max(totalHeight-tablineHeight-footerHeight, 1)}
 	if totalWidth < MinTermWidth || totalHeight < MinTermHeight {
 		return l
@@ -36,13 +49,22 @@ func CalculateLayout(totalWidth, totalHeight int, sidebarOpen, previewOpen bool)
 
 	x := 0
 	if sidebarOpen {
-		l.SidebarW = SidebarWidth
-		x = SidebarWidth + 1
+		w := SidebarWidth
+		if split.SidebarW > 0 {
+			w = clamp(split.SidebarW, minSidebarW, min(maxSidebarW, totalWidth-1-minPaneW))
+		}
+		l.SidebarW = w
+		x = w + 1
 	}
 	remain := totalWidth - x
 
 	if previewOpen && totalWidth >= minPreviewTotal {
-		l.EditorW = (remain - 1) / 2
+		avail := remain - 1
+		l.EditorW = avail / 2
+		if split.EditorFrac > 0 {
+			lo := min(minPaneW, avail/2)
+			l.EditorW = clamp(int(float64(avail)*split.EditorFrac+0.5), lo, avail-lo)
+		}
 		l.PreviewW = remain - 1 - l.EditorW
 		l.EditorX = x
 		l.PreviewX = x + l.EditorW + 1
@@ -51,4 +73,8 @@ func CalculateLayout(totalWidth, totalHeight int, sidebarOpen, previewOpen bool)
 	l.EditorX = x
 	l.EditorW = remain
 	return l
+}
+
+func clamp(v, lo, hi int) int {
+	return max(lo, min(v, hi))
 }

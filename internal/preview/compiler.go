@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/jaisuriya-11/tsuzuri/internal/highlight"
@@ -86,6 +87,52 @@ type compiler struct {
 	cal                         CalendarView
 	out                         []string
 	para                        []string
+
+	// Draggable blocks: finished ones, ones still being drawn, and where the
+	// current paragraph started.
+	blocks            []Block
+	pending           []Block
+	paraLine, paraEnd int
+	paraRow           int
+}
+
+// Block is one top-level piece of the note (paragraph, heading, list item,
+// table, fenced block …) that can be dragged to a new place.
+type Block struct {
+	Row, H    int // rows in the compiled output
+	Line, End int // document lines [Line, End)
+}
+
+// openBlock starts a block covering document lines [line, end) of the
+// current input; it is closed once the loop passes end.
+func (c *compiler) openBlock(line, end int) {
+	c.pending = append(c.pending, Block{Row: len(c.out), Line: c.lineOffset + line, End: c.lineOffset + end})
+}
+
+// closeBlocks finishes the pending blocks that end at or before line.
+func (c *compiler) closeBlocks(line int) {
+	keep := c.pending[:0]
+	for _, b := range c.pending {
+		if b.End <= c.lineOffset+line {
+			c.addBlock(b.Line, b.End, b.Row, len(c.out))
+		} else {
+			keep = append(keep, b)
+		}
+	}
+	c.pending = keep
+}
+
+// addBlock records a block drawn on rows [r0, r1), without blank edge rows.
+func (c *compiler) addBlock(line, end, r0, r1 int) {
+	for r0 < r1 && c.out[r0] == "" {
+		r0++
+	}
+	for r1 > r0 && c.out[r1-1] == "" {
+		r1--
+	}
+	if r1 > r0 {
+		c.blocks = append(c.blocks, Block{Row: r0, H: r1 - r0, Line: line, End: end})
+	}
 }
 
 func (c *compiler) emit(lines ...string) {
@@ -120,7 +167,9 @@ func (c *compiler) flushPara() {
 	}
 	text := strings.Join(c.para, " ")
 	c.para = nil
+	row := len(c.out)
 	c.emit(c.wrapIndent(c.inline(text, c.st.text), "", "")...)
+	c.addBlock(c.lineOffset+c.paraLine, c.lineOffset+c.paraEnd, row, len(c.out))
 }
 
 // Compile parses raw Markdown text and returns a styled ANSI string using the
@@ -144,10 +193,17 @@ func CompileWith(input string, th theme.Theme, contentWidth int, baseDir string,
 // CompileHits compiles and also returns the clickable regions of view
 // blocks (rows in the output, lines in the original document).
 func CompileHits(input string, th theme.Theme, contentWidth int, baseDir string, cal CalendarView) (out string, hits []Hit) {
+	out, hits, _ = CompileBlocks(input, th, contentWidth, baseDir, cal)
+	return out, hits
+}
+
+// CompileBlocks is CompileHits that also returns the note's draggable
+// blocks, sorted by row (a list item's children follow it).
+func CompileBlocks(input string, th theme.Theme, contentWidth int, baseDir string, cal CalendarView) (out string, hits []Hit, blocks []Block) {
 	defer func() {
 		if r := recover(); r != nil {
 			out = fmt.Sprintf("Error rendering preview: %v", r)
-			hits = nil
+			hits, blocks = nil, nil
 		}
 	}()
 	if contentWidth < 10 {
@@ -166,6 +222,7 @@ func CompileHits(input string, th theme.Theme, contentWidth int, baseDir string,
 	skipLevel := 0 // >0 while inside a collapsed heading's section
 	skipFence := ""
 	for i := 0; i < len(lines); i++ {
+		c.closeBlocks(i)
 		line := lines[i]
 		trimmed := strings.TrimSpace(line)
 
@@ -196,6 +253,7 @@ func CompileHits(input string, th theme.Theme, contentWidth int, baseDir string,
 			for i++; i < len(lines) && !strings.HasPrefix(strings.TrimSpace(lines[i]), fence); i++ {
 				code = append(code, lines[i])
 			}
+			c.openBlock(open, min(i+1, len(lines)))
 			c.fence, c.fenceEnd = c.lineOffset+open, c.lineOffset+i
 			c.codeBlock(lang, code)
 			continue
@@ -209,6 +267,7 @@ func CompileHits(input string, th theme.Theme, contentWidth int, baseDir string,
 			for i += 2; i < len(lines) && strings.Contains(lines[i], "|") && strings.TrimSpace(lines[i]) != ""; i++ {
 				rows = append(rows, splitRow(lines[i]))
 			}
+			c.openBlock(start-c.lineOffset, i)
 			i--
 			c.table(rows, start)
 			continue
@@ -217,6 +276,7 @@ func CompileHits(input string, th theme.Theme, contentWidth int, baseDir string,
 		// A line holding only an image is drawn as a picture.
 		if alt, src, ok := standaloneImage(line); ok {
 			c.flushPara()
+			c.openBlock(i, i+1)
 			c.image(alt, src)
 			continue
 		}
@@ -236,6 +296,7 @@ func CompileHits(input string, th theme.Theme, contentWidth int, baseDir string,
 
 		case dividerRegex.MatchString(trimmed):
 			c.flushPara()
+			c.openBlock(i, i+1)
 			c.blank()
 			c.emit(c.st.rule.Render(strings.Repeat("─", c.width)))
 			c.blank()
@@ -255,6 +316,11 @@ func CompileHits(input string, th theme.Theme, contentWidth int, baseDir string,
 			c.blank()
 			c.hits = append(c.hits, Hit{Row: len(c.out), H: 1, X1: c.width, Kind: "fold", Arg: key, Line: -1})
 			heading := c.wrapIndent(c.inline(m[2], st), st.Render(prefix), "    ")
+			end := i + 1
+			if folded {
+				end += sectionLength(lines, i, level)
+			}
+			c.openBlock(i, min(end, len(lines)))
 			if folded {
 				hidden := sectionLength(lines, i, level)
 				heading[len(heading)-1] += c.st.muted.Render(fmt.Sprintf("  … %d lines", hidden))
@@ -270,6 +336,7 @@ func CompileHits(input string, th theme.Theme, contentWidth int, baseDir string,
 
 		case checkboxRegex.MatchString(line):
 			c.flushPara()
+			c.openBlock(i, listItemEnd(lines, i))
 			m := checkboxRegex.FindStringSubmatch(line)
 			indent := strings.Repeat(" ", len(m[1]))
 			if m[2] == "x" || m[2] == "X" {
@@ -283,6 +350,7 @@ func CompileHits(input string, th theme.Theme, contentWidth int, baseDir string,
 
 		case bulletRegex.MatchString(line):
 			c.flushPara()
+			c.openBlock(i, listItemEnd(lines, i))
 			m := bulletRegex.FindStringSubmatch(line)
 			depth := len(m[1]) / 2
 			indent := strings.Repeat(" ", len(m[1]))
@@ -291,6 +359,7 @@ func CompileHits(input string, th theme.Theme, contentWidth int, baseDir string,
 
 		case numberedRegex.MatchString(line):
 			c.flushPara()
+			c.openBlock(i, listItemEnd(lines, i))
 			m := numberedRegex.FindStringSubmatch(line)
 			indent := strings.Repeat(" ", len(m[1]))
 			num := c.st.bullet.Bold(true).Render(m[2] + ".")
@@ -299,6 +368,7 @@ func CompileHits(input string, th theme.Theme, contentWidth int, baseDir string,
 
 		case blockquoteRegex.MatchString(line):
 			c.flushPara()
+			c.openBlock(i, i+1)
 			m := blockquoteRegex.FindStringSubmatch(line)
 			body := m[1]
 			bar := c.st.quoteBar.Render("▎ ")
@@ -315,15 +385,41 @@ func CompileHits(input string, th theme.Theme, contentWidth int, baseDir string,
 			c.emit(c.wrapIndent(c.inline(body, st), bar, bar)...)
 
 		default:
+			if len(c.para) == 0 {
+				c.paraLine = i
+			}
+			c.paraEnd = i + 1
 			c.para = append(c.para, trimmed)
 		}
 	}
 	c.flushPara()
+	c.closeBlocks(len(lines))
 
 	for len(c.out) > 0 && c.out[len(c.out)-1] == "" {
 		c.out = c.out[:len(c.out)-1]
 	}
-	return strings.Join(c.out, "\n"), c.hits
+	sort.SliceStable(c.blocks, func(a, b int) bool {
+		if c.blocks[a].Row != c.blocks[b].Row {
+			return c.blocks[a].Row < c.blocks[b].Row
+		}
+		return c.blocks[a].H > c.blocks[b].H
+	})
+	return strings.Join(c.out, "\n"), c.hits, c.blocks
+}
+
+// listItemEnd is the line after list item i and the more-indented lines
+// (its children) under it.
+func listItemEnd(lines []string, i int) int {
+	indent := len(lines[i]) - len(strings.TrimLeft(lines[i], " "))
+	end := i + 1
+	for end < len(lines) {
+		l := lines[end]
+		if strings.TrimSpace(l) == "" || len(l)-len(strings.TrimLeft(l, " ")) <= indent {
+			break
+		}
+		end++
+	}
+	return end
 }
 
 // callout recognises GitHub-style "[!NOTE]" admonitions.
@@ -340,6 +436,10 @@ func callout(s string) (string, string, bool) {
 }
 
 func (c *compiler) codeBlock(lang string, code []string) {
+	if l := strings.ToLower(strings.TrimSpace(lang)); l == "columns" || l == "cols" {
+		c.columns(code)
+		return
+	}
 	if lines, hits, ok := renderBlock(lang, code, c.st.th, c.width, c.cal); ok {
 		c.blank()
 		base := len(c.out)
@@ -390,6 +490,104 @@ func (c *compiler) codeBlock(lang string, code []string) {
 	}
 	box := c.st.codeBox.Width(inner + 2).Render(strings.Join(code, "\n"))
 	c.emit(strings.Split(box, "\n")...)
+	c.blank()
+}
+
+// columnSep splits a columns block into its columns.
+const columnSep = "+++"
+
+// columnGap is the space between neighbouring columns.
+const columnGap = 3
+
+// columns lays out a columns block: each "+++"-separated part is compiled as
+// its own Markdown and drawn side by side. Panes too narrow for the columns
+// stack them instead.
+func (c *compiler) columns(code []string) {
+	type part struct {
+		start int // index in code of the part's first line
+		lines []string
+	}
+	parts := []part{{}}
+	for i, l := range code {
+		if strings.TrimSpace(l) == columnSep {
+			parts = append(parts, part{start: i + 1})
+			continue
+		}
+		cur := &parts[len(parts)-1]
+		cur.lines = append(cur.lines, l)
+	}
+
+	n := len(parts)
+	colW := (c.width - columnGap*(n-1)) / n
+	stacked := colW < 16
+	if stacked {
+		colW = c.width
+	}
+
+	c.blank()
+	base := len(c.out)
+	var cols [][]string
+	for i, p := range parts {
+		out, hits := CompileHits(strings.Join(p.lines, "\n"), c.st.th, colW, c.baseDir, c.cal)
+		x := i * (colW + columnGap)
+		if stacked {
+			x = 0
+		}
+		off := c.fence + 1 + p.start // document line of this part's first line
+		for _, h := range hits {
+			h.Row += base
+			if !stacked {
+				h.X0 += x
+				h.X1 += x
+			}
+			if h.Line >= 0 {
+				h.Line += off
+			}
+			if h.Kind != "fold" {
+				h.Block += off
+				h.End += off
+			}
+			if stacked {
+				h.Row += len(c.out) - base
+			}
+			c.hits = append(c.hits, h)
+		}
+		lines := strings.Split(out, "\n")
+		if stacked {
+			c.out = append(c.out, lines...)
+			if i < n-1 {
+				c.out = append(c.out, "")
+			}
+			continue
+		}
+		cols = append(cols, lines)
+	}
+
+	rows := 0
+	for _, col := range cols {
+		rows = max(rows, len(col))
+	}
+	gap := strings.Repeat(" ", columnGap)
+	for r := 0; r < rows; r++ {
+		var b strings.Builder
+		for i, col := range cols {
+			l := ""
+			if r < len(col) {
+				l = col[r]
+			}
+			if ansi.StringWidth(l) > colW {
+				l = ansi.Truncate(l, colW, "")
+			}
+			if i > 0 {
+				b.WriteString(gap)
+			}
+			if i < len(cols)-1 {
+				l = pad(l, colW)
+			}
+			b.WriteString(l)
+		}
+		c.out = append(c.out, strings.TrimRight(b.String(), " "))
+	}
 	c.blank()
 }
 
