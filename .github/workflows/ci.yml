@@ -39,6 +39,38 @@ jobs:
       - name: Build
         run: go build ./cmd/tsuzuri
 
+  # Build the Nix flake so a stale vendorHash or version fails here, not for
+  # users running `nix run github:jaisuriya-11/tsuzuri`.
+  nix:
+    name: Nix build (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check for flake
+        id: flake
+        run: |
+          if [ -f flake.nix ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "No flake.nix; skipping."
+          fi
+
+      - uses: cachix/install-nix-action@v31
+        if: steps.flake.outputs.present == 'true'
+
+      - name: Build
+        if: steps.flake.outputs.present == 'true'
+        run: nix build -L .#default
+
+      - name: Run
+        if: steps.flake.outputs.present == 'true'
+        run: ./result/bin/tsuzuri --version
+
   # Build the full release locally and install it on every platform the
   # installers and packages target.
   snapshot:
