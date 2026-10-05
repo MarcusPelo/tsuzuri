@@ -53,6 +53,31 @@ archives:
 checksum:
   name_template: checksums.txt
 
+# brew install jaisuriya-11/tap/tsuzuri
+# Pushes a cask to github.com/jaisuriya-11/homebrew-tap on each release.
+homebrew_casks:
+  - name: tsuzuri
+    ids: [tsuzuri]
+    binaries: [tsuzuri]
+    homepage: https://github.com/jaisuriya-11/tsuzuri
+    description: Terminal notes app that keeps your notes as plain Markdown files
+    license: MIT
+    commit_author:
+      name: goreleaserbot
+      email: bot@goreleaser.com
+    commit_msg_template: "Brew cask update for {{ .ProjectName }} version {{ .Tag }}"
+    repository:
+      owner: jaisuriya-11
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    # The binary is not notarized; drop the quarantine flag so macOS runs it.
+    hooks:
+      post:
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/tsuzuri"]
+          end
+
 snapshot:
   version_template: "{{ incpatch .Version }}-next"
 
@@ -63,6 +88,11 @@ release:
     **macOS / Linux**
     ```sh
     curl -fsSL https://raw.githubusercontent.com/jaisuriya-11/tsuzuri/main/install.sh | sh
+    ```
+
+    **Homebrew**
+    ```sh
+    brew install jaisuriya-11/tap/tsuzuri
     ```
 
     **Windows (PowerShell)**
