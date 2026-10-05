@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/charmbracelet/lipgloss"
 )
@@ -96,8 +97,13 @@ type palette struct {
 	Folder     string `json:"folder"`
 }
 
-// UserThemesDir returns $XDG_CONFIG_HOME/tsuzuri/themes.
-func UserThemesDir() string {
+var (
+	userThemesOnce sync.Once
+	userThemes     map[string]palette
+	userThemesDir  = defaultUserThemesDir
+)
+
+func defaultUserThemesDir() string {
 	dir, err := os.UserConfigDir()
 	if err != nil {
 		return ""
@@ -105,30 +111,43 @@ func UserThemesDir() string {
 	return filepath.Join(dir, "tsuzuri", "themes")
 }
 
+// UserThemesDir returns the path to user-defined themes in the OS user config directory
+// ($XDG_CONFIG_HOME/tsuzuri/themes on Linux, ~/Library/Application Support/tsuzuri/themes
+// on macOS, and %APPDATA%\tsuzuri\themes on Windows).
+// Bundled themes take precedence over user themes on name collision.
+func UserThemesDir() string {
+	return userThemesDir()
+}
+
 func loadUserThemes() map[string]palette {
-	dir := UserThemesDir()
-	if dir == "" {
-		return nil
-	}
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return nil
-	}
-	userThemes := make(map[string]palette)
-	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(strings.ToLower(e.Name()), ".json") {
-			continue
+	userThemesOnce.Do(func() {
+		userThemes = make(map[string]palette)
+		dir := userThemesDir()
+		if dir == "" {
+			return
 		}
-		name := strings.TrimSuffix(strings.ToLower(e.Name()), ".json")
-		data, err := os.ReadFile(filepath.Join(dir, e.Name()))
+		entries, err := os.ReadDir(dir)
 		if err != nil {
-			continue
+			return
 		}
-		var p palette
-		if err := json.Unmarshal(data, &p); err == nil && p.Fg != "" && p.Bg != "" {
-			userThemes[name] = p
+		for _, e := range entries {
+			if e.IsDir() || !strings.HasSuffix(strings.ToLower(e.Name()), ".json") {
+				continue
+			}
+			name := strings.TrimSuffix(strings.ToLower(e.Name()), ".json")
+			if _, exists := palettes[name]; exists {
+				continue // bundled themes win on name collision
+			}
+			data, err := os.ReadFile(filepath.Join(dir, e.Name()))
+			if err != nil {
+				continue
+			}
+			var p palette
+			if err := json.Unmarshal(data, &p); err == nil && p.Fg != "" && p.Bg != "" {
+				userThemes[name] = p
+			}
 		}
-	}
+	})
 	return userThemes
 }
 
