@@ -64,7 +64,7 @@ tsuzuri --list-themes
 ## Features
 
 - **Plain Markdown files.** No database or lock-in: use git, sync the folder, open notes in any editor.
-- **A full workspace.** Start screen, file tree, tabs, statusline and 96 themes.
+- **A full workspace.** Start screen, file tree, tabs, statusline, custom themes, and 98 built-in themes (including Dark Knight).
 - **Modal keyboard editing** with mouse support, plus unsaved tabs and Save As.
 - **`/` block menu** for headings, to-dos, tables, callouts, code, images and more.
 - **Live preview** with syntax highlighting, images and cover banners drawn in the terminal.
