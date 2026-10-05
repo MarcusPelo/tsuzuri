@@ -31,7 +31,8 @@ curl -fsSL https://raw.githubusercontent.com/jaisuriya-11/tsuzuri/main/install.s
 **Homebrew** (macOS and Linux)
 
 ```sh
-brew install jaisuriya-11/tap/tsuzuri
+brew tap jaisuriya-11/tsuzuri https://github.com/jaisuriya-11/tsuzuri
+brew install jaisuriya-11/tsuzuri/tsuzuri
 ```
 
 **Windows** (PowerShell)

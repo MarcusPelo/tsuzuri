@@ -53,8 +53,9 @@ archives:
 checksum:
   name_template: checksums.txt
 
-# brew install jaisuriya-11/tap/tsuzuri
-# Pushes a cask to github.com/jaisuriya-11/homebrew-tap on each release.
+# brew tap jaisuriya-11/tsuzuri https://github.com/jaisuriya-11/tsuzuri
+# brew install jaisuriya-11/tsuzuri/tsuzuri
+# This repo is its own tap: each release commits Casks/tsuzuri.rb to main.
 homebrew_casks:
   - name: tsuzuri
     ids: [tsuzuri]
@@ -68,8 +69,10 @@ homebrew_casks:
     commit_msg_template: "Brew cask update for {{ .ProjectName }} version {{ .Tag }}"
     repository:
       owner: jaisuriya-11
-      name: homebrew-tap
-      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+      name: tsuzuri
+      branch: main
+      token: "{{ .Env.GITHUB_TOKEN }}"
+    directory: Casks
     # The binary is not notarized; drop the quarantine flag so macOS runs it.
     hooks:
       post:
@@ -92,7 +95,8 @@ release:
 
     **Homebrew**
     ```sh
-    brew install jaisuriya-11/tap/tsuzuri
+    brew tap jaisuriya-11/tsuzuri https://github.com/jaisuriya-11/tsuzuri
+    brew install jaisuriya-11/tsuzuri/tsuzuri
     ```
 
     **Windows (PowerShell)**
