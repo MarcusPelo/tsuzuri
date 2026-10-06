@@ -46,6 +46,9 @@ func main() {
 	}
 	if themesDir != "" {
 		theme.SetUserThemesPath(themesDir)
+		if _, err := os.Stat(theme.UserThemesDir()); err != nil {
+			fmt.Fprintf(os.Stderr, "Custom themes path %s not found; using bundled themes only\n", theme.UserThemesDir())
+		}
 	}
 
 	if showVer {

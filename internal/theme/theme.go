@@ -111,11 +111,10 @@ func defaultUserThemesPath() string {
 	return filepath.Join(dir, "tsuzuri", "themes")
 }
 
-// defaultUserThemesDir is kept for SetUserThemesDirForTest compatibility.
-func defaultUserThemesDir() string { return defaultUserThemesPath() }
-
 // SetUserThemesPath points the theme registry at a user-supplied location:
 // either a directory of *.json palettes or a single .json palette file.
+// A leading "~" expands to the user's home directory, since config.json
+// values never pass through a shell.
 // Pass "" to restore the default OS config location. It clears the cached
 // palettes, so call it before the first theme.Get/Names lookup (main does
 // this right after loading the config file).
@@ -123,9 +122,23 @@ func SetUserThemesPath(path string) {
 	if path == "" {
 		path = defaultUserThemesPath()
 	}
+	path = expandHome(path)
 	userThemesPath = func() string { return path }
 	userThemesOnce = sync.Once{}
 	userThemes = nil
+}
+
+// expandHome replaces a leading "~" with the user's home directory. Paths
+// such as "~user/x" are left unchanged.
+func expandHome(path string) string {
+	if path != "~" && !strings.HasPrefix(path, "~/") && !strings.HasPrefix(path, "~"+string(filepath.Separator)) {
+		return path
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return path
+	}
+	return filepath.Join(home, path[1:])
 }
 
 // UserThemesDir returns the path to user-defined themes in the OS user config directory
