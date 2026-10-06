@@ -24,14 +24,29 @@ func main() {
 	var (
 		dir        string
 		themeName  string
+		themesDir  string
 		showVer    bool
 		listThemes bool
 	)
 	flag.StringVar(&dir, "dir", "", "workspace directory to open (defaults to $TSUZURI_WORKSPACE, then the current directory)")
 	flag.BoolVar(&showVer, "version", false, "print the Tsuzuri version and exit")
 	flag.StringVar(&themeName, "theme", "", "colour theme for this session (see --list-themes)")
+	flag.StringVar(&themesDir, "themes-dir", "", "directory or .json file with custom themes (overrides config themes_dir)")
 	flag.BoolVar(&listThemes, "list-themes", false, "list the available colour themes and exit")
 	flag.Parse()
+
+	cfgPath := config.DefaultPath()
+	cfg, err := config.Load(cfgPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Ignoring unreadable config %s: %v\n", cfgPath, err)
+	}
+	// Custom themes location must be registered before any theme lookup.
+	if themesDir == "" {
+		themesDir = cfg.ThemesDir
+	}
+	if themesDir != "" {
+		theme.SetUserThemesPath(themesDir)
+	}
 
 	if showVer {
 		fmt.Printf("tsuzuri %s\n", version)
@@ -44,11 +59,6 @@ func main() {
 		return
 	}
 
-	cfgPath := config.DefaultPath()
-	cfg, err := config.Load(cfgPath)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Ignoring unreadable config %s: %v\n", cfgPath, err)
-	}
 	if themeName == "" {
 		themeName = cfg.Theme
 	}

@@ -100,6 +100,48 @@ func TestStoreCreateChild(t *testing.T) {
 	}
 }
 
+func TestRenameFolderViaUpdate(t *testing.T) {
+	store := newTestStore(t)
+	if err := os.MkdirAll(filepath.Join(store.Root(), "assets"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	updated, err := store.Update(core.Page{ID: "assets", Title: "images", IsFolder: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.ID != "images" || !updated.IsFolder {
+		t.Errorf("got %+v", updated)
+	}
+	if _, err := os.Stat(filepath.Join(store.Root(), "images")); err != nil {
+		t.Error("folder not renamed on disk")
+	}
+	// Same-name rename is a no-op, empty title keeps current name.
+	again, err := store.Update(core.Page{ID: "images", Title: "", IsFolder: true})
+	if err != nil || again.Title != "images" {
+		t.Errorf("got %+v %v", again, err)
+	}
+}
+
+func TestRenameFolderConflict(t *testing.T) {
+	store := newTestStore(t)
+	os.MkdirAll(filepath.Join(store.Root(), "a"), 0755)
+	os.MkdirAll(filepath.Join(store.Root(), "b"), 0755)
+	if _, err := store.Update(core.Page{ID: "a", Title: "b", IsFolder: true}); err == nil {
+		t.Error("expected conflict error")
+	}
+}
+
+func TestChildDir(t *testing.T) {
+	store := newTestStore(t)
+	if got := store.ChildDir(""); got != "" {
+		t.Errorf("ChildDir(\"\") = %q", got)
+	}
+	os.MkdirAll(filepath.Join(store.Root(), "notes"), 0755)
+	if got := store.ChildDir("notes"); got != "notes" {
+		t.Errorf("ChildDir(notes) = %q", got)
+	}
+}
+
 func TestStorePlainFoldersAreNavigable(t *testing.T) {
 	store := newTestStore(t)
 

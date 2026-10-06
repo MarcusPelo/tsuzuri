@@ -9,6 +9,30 @@ import (
 	"github.com/jaisuriya-11/tsuzuri/internal/theme"
 )
 
+// validPalette is a complete custom palette used across theme tests.
+var validPalette = map[string]any{
+	"light": false, "fg": "#ffffff", "darker_bg": "#050505", "bg": "#111111",
+	"bg2": "#1a1a1a", "one_bg": "#222222", "one_bg2": "#2a2a2a", "one_bg3": "#333333",
+	"grey": "#444444", "grey_fg": "#555555", "grey_fg2": "#666666", "light_grey": "#777777",
+	"red": "#ff0000", "pink": "#ff00ff", "line": "#222222", "green": "#00ff00",
+	"nord_blue": "#0000ff", "blue": "#0088ff", "yellow": "#ffff00", "purple": "#8800ff",
+	"dark_purple": "#440088", "teal": "#00ffff", "orange": "#ff8800", "cyan": "#00aaff",
+	"status_bg": "#1a1a1a", "light_bg": "#222222", "folder": "#0088ff",
+}
+
+func writePalette(t *testing.T, dir, name string, pal map[string]any) string {
+	t.Helper()
+	data, err := json.Marshal(pal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := filepath.Join(dir, name)
+	if err := os.WriteFile(p, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
+
 func TestBundledThemes(t *testing.T) {
 	def := theme.DefaultTheme()
 	if def.Name != theme.DefaultName {
@@ -103,4 +127,140 @@ func TestUserCustomThemeLoading(t *testing.T) {
 	if !found {
 		t.Error("expected 'custom-test' in theme.Names()")
 	}
+}
+
+func TestSampleThemeInTestdataLoads(t *testing.T) {
+	restore := theme.SetUserThemesDirForTest(func() string { return "testdata" })
+	defer restore()
+
+	th, ok := theme.Get("tokyo-night")
+	if !ok {
+		t.Fatal("expected testdata/tokyo-night.json to load as a user theme")
+	}
+	if th.Light {
+		t.Error("tokyo-night should be a dark theme")
+	}
+	if string(th.Bg) != "#1a1b26" || string(th.Blue) != "#7aa2f7" {
+		t.Errorf("got Bg=%s Blue=%s", th.Bg, th.Blue)
+	}
+	found := false
+	for _, n := range theme.Names() {
+		if n == "tokyo-night" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("tokyo-night missing from theme.Names()")
+	}
+}
+
+func TestUserThemeFromSingleFile(t *testing.T) {
+	tmpDir := t.TempDir()
+	file := writePalette(t, tmpDir, "single.json", validPalette)
+
+	restore := theme.SetUserThemesDirForTest(func() string { return file })
+	defer restore()
+
+	th, ok := theme.Get("single")
+	if !ok {
+		t.Fatal("expected theme loaded from a single .json file path")
+	}
+	if string(th.Bg) != "#111111" {
+		t.Errorf("Bg = %s, want #111111", th.Bg)
+	}
+}
+
+func TestUserThemeDirectoryOverride(t *testing.T) {
+	tmpDir := t.TempDir()
+	writePalette(t, tmpDir, "dirone.json", validPalette)
+	writePalette(t, tmpDir, "dirtwo.json", validPalette)
+	// Non-json files and directories must be ignored.
+	os.WriteFile(filepath.Join(tmpDir, "notes.txt"), []byte("{}"), 0o644)
+
+	restore := theme.SetUserThemesDirForTest(func() string { return tmpDir })
+	defer restore()
+
+	for _, n := range []string{"dirone", "dirtwo"} {
+		if _, ok := theme.Get(n); !ok {
+			t.Errorf("expected %q to load from overridden directory", n)
+		}
+	}
+	if _, ok := theme.Get("notes"); ok {
+		t.Error("non-.json file must not be treated as a theme")
+	}
+}
+
+func TestInvalidAndIncompletePalettesSkipped(t *testing.T) {
+	tmpDir := t.TempDir()
+	os.WriteFile(filepath.Join(tmpDir, "broken.json"), []byte("{not json"), 0o644)
+	os.WriteFile(filepath.Join(tmpDir, "incomplete.json"), []byte(`{"red":"#fff"}`), 0o644)
+	writePalette(t, tmpDir, "ok.json", validPalette)
+
+	restore := theme.SetUserThemesDirForTest(func() string { return tmpDir })
+	defer restore()
+
+	if _, ok := theme.Get("broken"); ok {
+		t.Error("malformed JSON must be skipped")
+	}
+	if _, ok := theme.Get("incomplete"); ok {
+		t.Error("palette missing fg/bg must be skipped")
+	}
+	if _, ok := theme.Get("ok"); !ok {
+		t.Error("valid palette must load alongside invalid ones")
+	}
+}
+
+func TestBundledWinsNameCollision(t *testing.T) {
+	tmpDir := t.TempDir()
+	custom := dict(validPalette)
+	custom["bg"] = "#abcdef"
+	writePalette(t, tmpDir, "onedark.json", custom)
+
+	restore := theme.SetUserThemesDirForTest(func() string { return tmpDir })
+	defer restore()
+
+	th, ok := theme.Get("onedark")
+	if !ok {
+		t.Fatal("onedark should still resolve")
+	}
+	if string(th.Bg) == "#abcdef" {
+		t.Error("bundled theme must win over user theme with same name")
+	}
+}
+
+func TestLightUserTheme(t *testing.T) {
+	tmpDir := t.TempDir()
+	pal := dict(validPalette)
+	pal["light"] = true
+	writePalette(t, tmpDir, "bright.json", pal)
+
+	restore := theme.SetUserThemesDirForTest(func() string { return tmpDir })
+	defer restore()
+
+	th, ok := theme.Get("bright")
+	if !ok || !th.Light {
+		t.Errorf("expected light theme, got ok=%v light=%v", ok, th.Light)
+	}
+}
+
+func TestMissingUserThemesPath(t *testing.T) {
+	restore := theme.SetUserThemesDirForTest(func() string {
+		return filepath.Join(t.TempDir(), "does-not-exist")
+	})
+	defer restore()
+
+	if _, ok := theme.Get("anything-custom"); ok {
+		t.Error("no custom themes should load from a missing directory")
+	}
+	if def := theme.DefaultTheme(); def.Name != theme.DefaultName {
+		t.Error("bundled default theme must still work")
+	}
+}
+
+func dict(m map[string]any) map[string]any {
+	out := make(map[string]any, len(m))
+	for k, v := range m {
+		out[k] = v
+	}
+	return out
 }

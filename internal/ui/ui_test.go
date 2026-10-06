@@ -27,6 +27,51 @@ func TestPaintAppliesDefaultColours(t *testing.T) {
 	}
 }
 
+func TestColumnRendersDivider(t *testing.T) {
+	out := ui.Column("│", 3, lipgloss.NewStyle())
+	if got := strings.Split(out, "\n"); len(got) != 3 {
+		t.Fatalf("Column gave %d rows", len(got))
+	}
+	if ui.Column("│", 0, lipgloss.NewStyle()) != "" {
+		t.Error("expected empty for h=0")
+	}
+}
+
+func TestCenter(t *testing.T) {
+	x, y := ui.Center(100, 50, 20, 10)
+	if x != 40 || y != 20 {
+		t.Errorf("Center = %d,%d", x, y)
+	}
+	if x, y := ui.Center(4, 4, 20, 20); x != 0 || y != 0 {
+		t.Errorf("Center overflow = %d,%d", x, y)
+	}
+}
+
+func TestTruncate(t *testing.T) {
+	if got := ui.Truncate("hello world", 5); got != "hell…" {
+		t.Errorf("Truncate = %q", got)
+	}
+	if got := ui.Truncate("hi", 10); got != "hi" {
+		t.Errorf("Truncate short = %q", got)
+	}
+	if got := ui.Truncate("hi", 1); got != "…" {
+		t.Errorf("Truncate w=1 = %q", got)
+	}
+	if got := ui.Truncate("hi", 0); got != "" {
+		t.Errorf("Truncate w=0 = %q", got)
+	}
+}
+
+func TestFitEdges(t *testing.T) {
+	if ui.Fit("x", 0, 5, lipgloss.NewStyle()) != "" {
+		t.Error("expected empty for w=0")
+	}
+	out := ui.Fit("a\nb\nc\nd", 3, 2, lipgloss.NewStyle())
+	if got := len(strings.Split(out, "\n")); got != 2 {
+		t.Errorf("expected 2 rows, got %d", got)
+	}
+}
+
 func TestFitAndOverlayKeepWidth(t *testing.T) {
 	plain := lipgloss.NewStyle()
 	box := ui.Fit("abc\ndefghijkl", 5, 3, plain)

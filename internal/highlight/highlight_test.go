@@ -1,10 +1,14 @@
 package highlight_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/jaisuriya-11/tsuzuri/internal/highlight"
 	"github.com/jaisuriya-11/tsuzuri/internal/theme"
+
+	"github.com/charmbracelet/lipgloss"
+	"github.com/muesli/termenv"
 )
 
 func TestCodeColoursKnownLanguages(t *testing.T) {
@@ -32,6 +36,83 @@ func TestCodeColoursKnownLanguages(t *testing.T) {
 		if colored == 0 {
 			t.Errorf("%s: expected some highlighted runes", lang)
 		}
+	}
+}
+
+func TestFrontMatterHighlight(t *testing.T) {
+	th := theme.DefaultTheme()
+	doc := "---\ntitle: Hi\ntags: [a]\n---\n# Hi\nbody"
+	cols := highlight.Markdown(doc, th)
+	if len(cols) != 6 {
+		t.Fatalf("expected 6 lines, got %d", len(cols))
+	}
+	if cols[0][0] != th.GreyFg {
+		t.Errorf("front-matter delimiter should be grey")
+	}
+	if cols[1][0] != th.Red {
+		t.Errorf("front-matter key should be red, got %q", cols[1][0])
+	}
+}
+
+func TestInlineElementsHighlight(t *testing.T) {
+	th := theme.DefaultTheme()
+	doc := "see [link](http://x) and `code` and **emph** and #tag"
+	cols := highlight.Markdown(doc, th)
+	if len(cols) != 1 {
+		t.Fatalf("expected 1 line")
+	}
+	nonEmpty := 0
+	for _, c := range cols[0] {
+		if c != "" {
+			nonEmpty++
+		}
+	}
+	if nonEmpty == 0 {
+		t.Error("expected inline colours")
+	}
+}
+
+func TestRenderPaintsRunes(t *testing.T) {
+	r := lipgloss.NewRenderer(nil)
+	r.SetColorProfile(termenv.TrueColor)
+	lipgloss.SetDefaultRenderer(r)
+	th := theme.DefaultTheme()
+	runes := []rune("ab")
+	colors := []lipgloss.Color{th.Red, th.Blue}
+	out := highlight.Render(runes, colors, lipgloss.NewStyle())
+	if !strings.Contains(out, "\x1b[") {
+		t.Errorf("expected styled output, got %q", out)
+	}
+}
+
+func TestCodeUnknownLanguageFallsBack(t *testing.T) {
+	th := theme.DefaultTheme()
+	cols := highlight.Code("not-a-language", "x = 1", th)
+	if len(cols) != 1 {
+		t.Fatalf("expected 1 line")
+	}
+}
+
+func TestCodeEmptyInput(t *testing.T) {
+	th := theme.DefaultTheme()
+	cols := highlight.Code("go", "", th)
+	if len(cols) != 0 && len(cols[0]) != 0 {
+		t.Errorf("expected empty highlight, got %v", cols)
+	}
+}
+
+func TestMarkdownQuoteAndRule(t *testing.T) {
+	th := theme.DefaultTheme()
+	doc := "> quoted\n\n---\n\n- [x] done"
+	cols := highlight.Markdown(doc, th)
+	if cols[0][0] != th.Purple {
+		t.Errorf("quote marker should be purple")
+	}
+	if cols[2][0] != th.GreyFg {
+		t.Errorf("rule should be grey")
+	}
+	if cols[4][3] != th.Green {
+		t.Errorf("checked box should be green, got %q", cols[4][3])
 	}
 }
 

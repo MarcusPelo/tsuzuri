@@ -753,7 +753,10 @@ func (c *compiler) table(rows [][]string, docStart int) {
 			if ansi.StringWidth(cell) > widths[j] {
 				cell = ansi.Truncate(cell, widths[j], "…")
 			}
-			b.WriteString(" " + cell + strings.Repeat(" ", widths[j]-ansi.StringWidth(cell)) + " ")
+			b.WriteString(" ")
+			b.WriteString(cell)
+			b.WriteString(strings.Repeat(" ", widths[j]-ansi.StringWidth(cell)))
+			b.WriteString(" ")
 			b.WriteString(line.Render("│"))
 		}
 		c.emit(b.String())

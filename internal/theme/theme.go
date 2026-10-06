@@ -100,10 +100,10 @@ type palette struct {
 var (
 	userThemesOnce sync.Once
 	userThemes     map[string]palette
-	userThemesDir  = defaultUserThemesDir
+	userThemesPath = defaultUserThemesPath
 )
 
-func defaultUserThemesDir() string {
+func defaultUserThemesPath() string {
 	dir, err := os.UserConfigDir()
 	if err != nil {
 		return ""
@@ -111,22 +111,50 @@ func defaultUserThemesDir() string {
 	return filepath.Join(dir, "tsuzuri", "themes")
 }
 
+// defaultUserThemesDir is kept for SetUserThemesDirForTest compatibility.
+func defaultUserThemesDir() string { return defaultUserThemesPath() }
+
+// SetUserThemesPath points the theme registry at a user-supplied location:
+// either a directory of *.json palettes or a single .json palette file.
+// Pass "" to restore the default OS config location. It clears the cached
+// palettes, so call it before the first theme.Get/Names lookup (main does
+// this right after loading the config file).
+func SetUserThemesPath(path string) {
+	if path == "" {
+		path = defaultUserThemesPath()
+	}
+	userThemesPath = func() string { return path }
+	userThemesOnce = sync.Once{}
+	userThemes = nil
+}
+
 // UserThemesDir returns the path to user-defined themes in the OS user config directory
 // ($XDG_CONFIG_HOME/tsuzuri/themes on Linux, ~/Library/Application Support/tsuzuri/themes
-// on macOS, and %APPDATA%\tsuzuri\themes on Windows).
+// on macOS, and %APPDATA%\tsuzuri\themes on Windows), or the custom path set
+// via SetUserThemesPath.
 // Bundled themes take precedence over user themes on name collision.
 func UserThemesDir() string {
-	return userThemesDir()
+	return userThemesPath()
 }
 
 func loadUserThemes() map[string]palette {
 	userThemesOnce.Do(func() {
 		userThemes = make(map[string]palette)
-		dir := userThemesDir()
-		if dir == "" {
+		path := userThemesPath()
+		if path == "" {
 			return
 		}
-		entries, err := os.ReadDir(dir)
+		info, err := os.Stat(path)
+		switch {
+		case err != nil:
+			return
+		case !info.IsDir():
+			if strings.HasSuffix(strings.ToLower(path), ".json") {
+				addUserThemeFile(path)
+			}
+			return
+		}
+		entries, err := os.ReadDir(path)
 		if err != nil {
 			return
 		}
@@ -134,21 +162,27 @@ func loadUserThemes() map[string]palette {
 			if e.IsDir() || !strings.HasSuffix(strings.ToLower(e.Name()), ".json") {
 				continue
 			}
-			name := strings.TrimSuffix(strings.ToLower(e.Name()), ".json")
-			if _, exists := palettes[name]; exists {
-				continue // bundled themes win on name collision
-			}
-			data, err := os.ReadFile(filepath.Join(dir, e.Name()))
-			if err != nil {
-				continue
-			}
-			var p palette
-			if err := json.Unmarshal(data, &p); err == nil && p.Fg != "" && p.Bg != "" {
-				userThemes[name] = p
-			}
+			addUserThemeFile(filepath.Join(path, e.Name()))
 		}
 	})
 	return userThemes
+}
+
+// addUserThemeFile parses one palette JSON file into the userThemes map.
+// Invalid files are skipped; bundled theme names win collisions.
+func addUserThemeFile(path string) {
+	name := strings.TrimSuffix(strings.ToLower(filepath.Base(path)), ".json")
+	if _, exists := palettes[name]; exists {
+		return // bundled themes win on name collision
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return
+	}
+	var p palette
+	if err := json.Unmarshal(data, &p); err == nil && p.Fg != "" && p.Bg != "" {
+		userThemes[name] = p
+	}
 }
 
 // Names lists every available theme (bundled and user-defined), sorted.

@@ -210,6 +210,75 @@ func TestClickPastLineEndNeverPanics(t *testing.T) {
 	}
 }
 
+func TestModeStringAndFocus(t *testing.T) {
+	c := content.New(theme.DefaultTheme())
+	c.SetPage(core.Page{ID: "a.md", Content: "x"})
+	if got := c.ModeString(); got != "NORMAL" {
+		t.Errorf("ModeString = %q", got)
+	}
+	c.EnterInsert()
+	if got := c.ModeString(); got != "INSERT" {
+		t.Errorf("ModeString = %q", got)
+	}
+	c.ExitInsert()
+	if got := c.ModeString(); got != "NORMAL" {
+		t.Errorf("ModeString = %q", got)
+	}
+	if !c.HasPage() || c.LineCount() != 1 {
+		t.Errorf("HasPage=%v LineCount=%d", c.HasPage(), c.LineCount())
+	}
+	c.CommandView(20)
+	c.SetTheme(theme.DefaultTheme())
+	c.Focus()
+	c.Blur()
+	c.Init()
+}
+
+func TestBufferCommands(t *testing.T) {
+	c := content.New(theme.DefaultTheme())
+	c.SetPage(core.Page{ID: "a.md", Content: "one\ntwo\nthree\nfour\nfive\nsix\nseven\neight"})
+	c.GotoLine(3)
+	if l, _ := c.CursorPosition(); l != 3 {
+		t.Errorf("line = %d", l)
+	}
+	c.ReplaceText("a\nb")
+	if c.Value() != "a\nb" {
+		t.Errorf("Value = %q", c.Value())
+	}
+	c.SetPage(core.Page{ID: "a.md", Content: strings.Join([]string{"1", "2", "3", "4", "5", "6", "7", "8", "9", "10"}, "\n")})
+	c.SetSize(40, 4)
+	c.ScrollBy(3)
+}
+
+func TestSetFrontMatterAndInsertText(t *testing.T) {
+	c := content.New(theme.DefaultTheme())
+	c.SetPage(core.Page{ID: "a.md", Content: "body text"})
+	c.SetFrontMatter("title", "Hello")
+	if got := c.Value(); !strings.HasPrefix(got, "---\ntitle: Hello\n---\n") {
+		t.Errorf("Value = %q", got)
+	}
+	c.SetFrontMatter("title", "Updated")
+	if got := c.Value(); !strings.Contains(got, "title: Updated") {
+		t.Errorf("Value = %q", got)
+	}
+	c.InsertText("hi ")
+	if !strings.Contains(c.Value(), "hi ") {
+		t.Errorf("Value = %q", c.Value())
+	}
+}
+
+func TestTableOpAtAndSetTableCell(t *testing.T) {
+	c := content.New(theme.DefaultTheme())
+	c.SetPage(core.Page{ID: "a.md", Content: "| a | b |\n| --- | --- |\n| 1 | 2 |"})
+	if !c.SetTableCell(2, 0, "99") {
+		t.Error("SetTableCell should succeed on the cell row")
+	}
+	if !strings.Contains(c.Value(), "99") {
+		t.Errorf("Value = %q", c.Value())
+	}
+	_ = c.TableOpAt(2, 0, "addCol")
+}
+
 func TestTableEditing(t *testing.T) {
 	c := content.New(theme.DefaultTheme())
 	c.SetSize(80, 20)

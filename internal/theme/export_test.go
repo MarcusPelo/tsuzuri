@@ -4,11 +4,13 @@ import "sync"
 
 // SetUserThemesDirForTest overrides the user themes directory for tests.
 func SetUserThemesDirForTest(fn func() string) func() {
-	prev := userThemesDir
-	userThemesDir = fn
+	prev := userThemesPath
+	userThemesPath = fn
 	userThemesOnce = sync.Once{}
+	userThemes = nil
 	return func() {
-		userThemesDir = prev
+		userThemesPath = prev
 		userThemesOnce = sync.Once{}
+		userThemes = nil
 	}
 }

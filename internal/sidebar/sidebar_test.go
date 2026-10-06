@@ -11,6 +11,30 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
+func TestSidebarSettersAndAccessors(t *testing.T) {
+	th := theme.DefaultTheme()
+	sb := sidebar.New(th)
+	sb.SetSize(28, 25)
+	sb.SetPages([]core.Page{
+		{ID: "work/a.md", Title: "a", ParentID: "work"},
+		{ID: "work", Title: "work", IsFolder: true},
+	})
+	sb.SetTheme(th)
+	sb.SetWorkspaceName("notes")
+	sb.SetActiveID("work/a.md")
+	sb.SetModified(map[string]bool{"work/a.md": true})
+	sb.SetFocused(false)
+	if sb.IsRenaming() || sb.IsBusy() {
+		t.Error("expected not renaming/busy")
+	}
+	if p, ok := sb.SelectedPage(); ok && p.ID == "" {
+		t.Error("SelectedPage returned empty page")
+	}
+	_ = sb.ContextParentID()
+	sb.Scroll(1)
+	sb.View()
+}
+
 func TestSidebarComponent(t *testing.T) {
 	th := theme.DefaultTheme()
 	sb := sidebar.New(th)
