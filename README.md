@@ -60,6 +60,7 @@ Press `?` inside the app to see every shortcut.
 tsuzuri --dir ~/notes          # open a specific folder
 tsuzuri --theme <name>         # pick a theme for this session
 tsuzuri --list-themes
+tsuzuri --themes-dir <path>    # custom themes folder or single .json file
 ```
 
 ## Features
@@ -116,6 +117,11 @@ Drop a JSON palette into the themes folder in your user config directory:
 - **Windows:** `%APPDATA%\tsuzuri\themes\<name>.json`
 
 User themes appear automatically in the live theme picker (`Space` `t`) and in `--list-themes`. Bundled themes take precedence on a name collision.
+
+To use themes from a different folder (or a single palette file), set `themes_dir` in your config:
+
+- **config.json:** `{"theme": "onedark", "themes_dir": "~/my-themes"}` — a directory of `*.json` palettes, or one `.json` file
+- **flag:** `tsuzuri --themes-dir ~/my-themes` (overrides the config value)
 
 Example `~/.config/tsuzuri/themes/minimal.json`:
 

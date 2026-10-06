@@ -12,6 +12,10 @@ import (
 // Config holds user preferences.
 type Config struct {
 	Theme string `json:"theme,omitempty"`
+	// ThemesDir optionally points at a custom location for user themes:
+	// either a directory containing *.json palettes or a single .json
+	// palette file. Empty means the default OS config themes directory.
+	ThemesDir string `json:"themes_dir,omitempty"`
 }
 
 // DefaultPath returns the config file location, or "" if the OS has no

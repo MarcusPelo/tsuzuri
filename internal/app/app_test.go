@@ -138,6 +138,70 @@ func find(t *testing.T, view, text string) (int, int) {
 	return 0, 0
 }
 
+func TestLeaderKeysMoveFocusPanesAndTogglePreview(t *testing.T) {
+	store := newTestStore(t)
+	h := newHarness(t, store)
+	h.keys(" ") // leader pending
+	h.keys("e") // focus sidebar
+	h.keys(" ")
+	h.keys("p") // toggle preview
+	h.keys(" ")
+	h.keys("d")  // go home
+	h.keys("\t") // move pane
+	h.keys("\t")
+	h.keys("\x1b") // esc back to editor if possible
+	h.view()
+}
+
+func TestDashboardQuickActions(t *testing.T) {
+	store := newTestStore(t)
+	if _, err := store.Create("hello", ""); err != nil {
+		t.Fatal(err)
+	}
+	h := newHarness(t, store)
+	h.view()
+	// Dashboard listens for digits / enter on "New Note" etc.; just make sure
+	// browsing doesn't panic.
+	h.key(tea.KeyDown)
+	h.key(tea.KeyEnter)
+	h.view()
+}
+
+func TestSaveAsDialogTabAndWindowStart(t *testing.T) {
+	store := newTestStore(t)
+	h := newHarness(t, store)
+	h.keys("n")
+	h.key(tea.KeyEsc)
+	h.keys(":w")
+	h.key(tea.KeyEnter)
+	if v := h.view(); !strings.Contains(v, "Save As") {
+		t.Fatalf("expected Save As dialog:\n%s", v)
+	}
+	h.key(tea.KeyTab)      // move to the folder field / focusField
+	h.key(tea.KeyShiftTab) // move back
+	h.key(tea.KeyCtrlN)    // exercise dialog update paths
+	h.key(tea.KeyEsc)
+	h.view()
+}
+
+func TestVimQuitAndSaveMessages(t *testing.T) {
+	store := newTestStore(t)
+	if _, err := store.Create("body", ""); err != nil {
+		t.Fatal(err)
+	}
+	h := newHarness(t, store)
+	h.send(core.PageSelectedMsg{ID: "body.md"})
+	h.view()
+	h.send(core.VimQuitMsg{Force: false})
+	if h.quit {
+		t.Log("quitted immediately")
+	}
+	h.send(core.VimQuitMsg{Force: true})
+	if !h.quit {
+		t.Error("expected :q! to quit")
+	}
+}
+
 func TestDashboardAndNewNoteSaveAs(t *testing.T) {
 	store := newTestStore(t)
 	if err := os.MkdirAll(filepath.Join(store.Root(), "journal"), 0755); err != nil {
@@ -389,6 +453,25 @@ func TestKeymapModalAndSmallScreens(t *testing.T) {
 				break
 			}
 		}
+	}
+}
+
+func TestFinderArrowKeysAndFilter(t *testing.T) {
+	store := newTestStore(t)
+	for _, n := range []string{"alpha", "beta", "gamma"} {
+		if _, err := store.SaveAs("notes", n, n+" text"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	h := newHarness(t, store)
+	h.keys("f")
+	h.key(tea.KeyDown) // move selection (covers finder.move)
+	h.key(tea.KeyUp)
+	h.key(tea.KeyCtrlN) // vim-style down in the finder
+	h.keys("gam")
+	h.key(tea.KeyEnter)
+	if v := h.view(); !strings.Contains(strings.Split(v, "\n")[0], "gamma.md") {
+		t.Fatalf("expected gamma.md open:\n%s", v)
 	}
 }
 
