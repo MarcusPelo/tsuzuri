@@ -264,3 +264,25 @@ func dict(m map[string]any) map[string]any {
 	}
 	return out
 }
+
+func TestUserThemesPathExpandsTilde(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home) // os.UserHomeDir on Windows
+	themes := filepath.Join(home, "my-themes")
+	if err := os.Mkdir(themes, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writePalette(t, themes, "tilde.json", validPalette)
+
+	restore := theme.SetUserThemesDirForTest(func() string { return "" })
+	defer restore()
+	theme.SetUserThemesPath("~/my-themes")
+
+	if got := theme.UserThemesDir(); got != themes {
+		t.Errorf("UserThemesDir() = %q, want %q", got, themes)
+	}
+	if _, ok := theme.Get("tilde"); !ok {
+		t.Error("expected theme to load from a ~-prefixed path")
+	}
+}
