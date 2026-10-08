@@ -76,7 +76,7 @@ func TestTarget(t *testing.T) {
 		{"report.PDF", filepath.Join(dir, "report.PDF")},
 		{"sub", filepath.Join(sub, "Note.pdf")},
 		{"new/", filepath.Join(dir, "new", "Note.pdf")},
-		{"/abs/x.pdf", "/abs/x.pdf"},
+		{filepath.Join(dir, "abs", "x.pdf"), filepath.Join(dir, "abs", "x.pdf")},
 		{"~/x", filepath.Join(home, "x.pdf")},
 	}
 	for _, c := range cases {
