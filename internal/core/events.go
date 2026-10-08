@@ -66,6 +66,12 @@ type CopyMsg struct {
 	Text string
 }
 
+// ExportMsg is emitted by ":export [file]": write the open note as a PDF.
+// An empty Path saves it next to the note under the note's name.
+type ExportMsg struct {
+	Path string
+}
+
 // ThemeMsg switches the colour theme (":colorscheme name"). An empty Name
 // opens the theme picker.
 type ThemeMsg struct {

@@ -61,6 +61,7 @@ tsuzuri --dir ~/notes          # open a specific folder
 tsuzuri --theme <name>         # pick a theme for this session
 tsuzuri --list-themes
 tsuzuri --themes-dir <path>    # custom themes folder or single .json file
+tsuzuri export note.md         # write note.pdf next to the note (-o to pick the file)
 ```
 
 ## Features
@@ -73,6 +74,8 @@ tsuzuri --themes-dir <path>    # custom themes folder or single .json file
 - **Drag blocks to reorder them** in the preview by their `⠿` handle, or add one below with `+`, like Notion.
 - **Boards, calendars, timelines, charts and forms**, stored as text and editable from the preview.
 - **Flowcharts** from Mermaid syntax (`graph TD` / `graph LR`), drawn with real shapes: boxes, decisions, circles, databases.
+- **Equations** in LaTeX (`/equation`, a `math` block or `$$…$$`), shown as Unicode: `x^2` → `x²`, `\alpha` → `α`.
+- **Export to PDF** with `:export`: a clean printable document, with boards, charts and flowcharts included.
 - **2, 3 and 4 column layouts** from the `/` menu.
 - **Resizable panes**: drag the dividers between the explorer, editor and preview.
 - **Fast search** across file names and note contents.
@@ -93,6 +96,30 @@ fix --> check
 
 Shapes: `[box]`, `(rounded)`, `([stadium])`, `{decision}`, `{{hexagon}}`, `((circle))`, `[(database)]`, `[[subroutine]]`.
 Arrows: `-->`, `-.->` (dotted), `==>` (thick), with labels as `-->|yes|` or `-- yes -->`.
+
+## Equations
+
+Type `/equation`, or write a `math` block or `$$ … $$`. Each line is one equation:
+
+````md
+```math
+x = \frac{-b \pm \sqrt{b^2 - 4ac}}{2a}
+E = mc^2
+```
+````
+
+The preview shows `x = (−b ± √(b² − 4ac))/(2a)` and `E = mc²`. Greek letters, operators, arrows, `^` / `_`, `\frac`, `\sqrt`, `\mathbb` and accents are supported. Unicode has no superscript for some letters, so those print as `^(…)`.
+
+## Export to PDF
+
+In the editor, `:export` writes the open note as a PDF next to it. `:export ~/Desktop/` or `:export report.pdf` picks another place. From the shell:
+
+```sh
+tsuzuri export notes/plan.md               # notes/plan.pdf
+tsuzuri export notes/plan.md -o plan.pdf
+```
+
+The PDF is a printable A4 document with headings, lists, tables, syntax-highlighted code, equations and images. Boards, calendars, timelines, charts and flowcharts print in colour as they look in the preview.
 
 ## Columns
 

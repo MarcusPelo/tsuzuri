@@ -97,6 +97,25 @@ func TestCommandParsing(t *testing.T) {
 	}
 }
 
+func TestExportCommand(t *testing.T) {
+	for in, want := range map[string]string{":export": "", ":export out/report.pdf": "out/report.pdf", ":pdf notes": "notes"} {
+		c := content.New(theme.DefaultTheme())
+		c.SetSize(80, 10)
+		c.SetPage(core.Page{ID: "a.md", Content: "x"})
+		c = keys(c, in)
+		_, cmd := c.Update(tea.KeyMsg{Type: tea.KeyEnter})
+		found := false
+		for _, msg := range collect(cmd) {
+			if e, ok := msg.(core.ExportMsg); ok && e.Path == want {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("%q: expected ExportMsg{Path: %q}", in, want)
+		}
+	}
+}
+
 func collect(cmd tea.Cmd) []tea.Msg {
 	if cmd == nil {
 		return nil

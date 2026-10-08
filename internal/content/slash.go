@@ -42,6 +42,7 @@ var slashItems = []slashItem{
 	{section: "Basic blocks", icon: "\U000f02fd", label: "Callout", aliases: "note tip info admonition", before: "> [!NOTE]\n> ", block: true},
 	{section: "Basic blocks", icon: "\U000f027e", label: "Quote", hint: "\"", aliases: "blockquote", before: "> ", block: true},
 	{section: "Basic blocks", icon: "\U000f04eb", label: "Table", aliases: "grid", before: "| ", after: " | Column 2 |\n| --- | --- |\n|  |  |", block: true},
+	{section: "Basic blocks", icon: "\U000f04a0", label: "Equation", hint: "$$", aliases: "math latex tex formula katex", before: "```math\n", after: "\n```", block: true},
 	{section: "Basic blocks", icon: "\U000f0374", label: "Divider", hint: "---", aliases: "hr rule line separator", before: "---\n", block: true},
 	{section: "Basic blocks", icon: "\U000f0bcc", label: "2 columns", hint: "+++", aliases: "columns cols layout side split", before: "~~~columns\n", after: "\n+++\nColumn 2\n~~~", block: true},
 	{section: "Basic blocks", icon: "\U000f056d", label: "3 columns", hint: "+++", aliases: "columns cols layout side split", before: "~~~columns\n", after: "\n+++\nColumn 2\n+++\nColumn 3\n~~~", block: true},
