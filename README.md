@@ -21,7 +21,7 @@ https://github.com/user-attachments/assets/edccf6de-940e-43ad-a4c2-cf73a77d7a37
 
 </div>
 
-## Installation
+## Installation & Update
 
 **macOS and Linux**
 
