@@ -11,19 +11,33 @@ import (
 // The helpers below let other renderers (the PDF export) reuse the preview's
 // parsing and block drawing.
 
-// controls are the clickable bits of the views, which mean nothing on paper.
-var controls = []string{" + New page", calendarNav, "⊕ add question", "+ Add value", "+ New"}
+// controls are the clickable bits of the views, which mean nothing on paper;
+// longer labels come first so "+ New page" goes before "+ New".
+var controls = []string{"⊕ add question", "+ Add option", "+ Add value", "+ New page", calendarNav, "+ New"}
 
 // PrintBlockLines draws a special fenced block (board, calendar, timeline,
 // chart, form, flow) as styled terminal lines width cells wide, without its
-// clickable controls. ok is false for ordinary code.
+// clickable controls or editing hints. ok is false for ordinary code.
 func PrintBlockLines(lang string, body []string, th theme.Theme, width int) (lines []string, ok bool) {
-	lines, _, ok = renderBlock(lang, body, th, width, CalendarView{})
-	for i, l := range lines {
+	drawn, _, ok := renderBlock(lang, body, th, width, CalendarView{})
+	for _, l := range drawn {
+		plain := ansi.Strip(l)
+		rest, found := plain, false
 		for _, c := range controls {
-			l = strings.ReplaceAll(l, c, strings.Repeat(" ", ansi.StringWidth(c)))
+			if strings.Contains(rest, c) {
+				rest, found = strings.ReplaceAll(rest, c, ""), true
+			}
 		}
-		lines[i] = l
+		hint := strings.TrimSpace(plain)
+		if found && strings.Trim(rest, " │") == "" || strings.HasPrefix(hint, "(empty ") || strings.HasPrefix(hint, "(add questions") {
+			continue // a row holding only controls or an editing hint
+		}
+		if found {
+			for _, c := range controls {
+				l = strings.ReplaceAll(l, c, strings.Repeat(" ", ansi.StringWidth(c)))
+			}
+		}
+		lines = append(lines, l)
 	}
 	for len(lines) > 0 && strings.TrimSpace(ansi.Strip(lines[len(lines)-1])) == "" {
 		lines = lines[:len(lines)-1]

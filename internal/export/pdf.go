@@ -754,7 +754,7 @@ func (d *doc) textArt(lines []string) {
 	for _, line := range lines {
 		d.ensure(lineH)
 		y := d.pdf.GetY()
-		segs := sgrSegments(line)
+		segs := splitBlocks(sgrSegments(line))
 		// Backgrounds first, merging touching runs of one colour (chart
 		// bars are solid blocks), so no glyph is painted over and no seams
 		// show between cells.
@@ -822,6 +822,28 @@ func (d *doc) textArt(lines []string) {
 		d.pdf.SetXY(l, y+lineH)
 	}
 	d.pdf.Ln(3)
+}
+
+// splitBlocks cuts segments so solid block runs ("█") stand alone and can
+// be painted as rectangles, even when a bar ends in a partial block.
+func splitBlocks(segs []segment) []segment {
+	var out []segment
+	for _, sg := range segs {
+		start, solid := 0, false
+		for i, r := range sg.text {
+			if s := r == '█'; s != solid && i > start {
+				part := sg
+				part.text = sg.text[start:i]
+				out = append(out, part)
+				start = i
+			}
+			solid = r == '█'
+		}
+		part := sg
+		part.text = sg.text[start:]
+		out = append(out, part)
+	}
+	return out
 }
 
 // --- inline text -----------------------------------------------------------------

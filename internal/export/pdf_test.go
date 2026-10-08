@@ -6,6 +6,11 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/charmbracelet/x/ansi"
+
+	"github.com/jaisuriya-11/tsuzuri/internal/preview"
+	"github.com/jaisuriya-11/tsuzuri/internal/theme"
 )
 
 const everything = "---\nicon: x\n---\n# Title\n\nText with **bold**, *italic*, `code`, ~~gone~~ and [a link](https://example.com).\n\n" +
@@ -113,5 +118,46 @@ func TestSGRSegments(t *testing.T) {
 	segs := sgrSegments("a\x1b[1;38;2;10;20;30;48;5;196mb\x1b[0mc")
 	if len(segs) != 3 || segs[1].text != "b" || !segs[1].bold || *segs[1].fg != (rgb{10, 20, 30}) || *segs[1].bg != (rgb{255, 0, 0}) || segs[2].fg != nil {
 		t.Errorf("unexpected segments: %+v", segs)
+	}
+}
+
+func TestPrintedViewsHaveNoControls(t *testing.T) {
+	th, _ := theme.Get(printTheme)
+	blocks := map[string][]string{
+		"form":     {"title: F", "? Q1", "? Q2 (choice): A | B", "? Q3 (multi): C | D"},
+		"chart":    {"type: hbar", "Jan: 12", "Feb: 20"},
+		"board":    {"## Todo", "- Card", "## Done", "- Other"},
+		"calendar": {"month: 2026-10", "2026-10-08: Ship"},
+		"timeline": {"T: 2026-10-01 -> 2026-10-05"},
+	}
+	for lang, body := range blocks {
+		lines, ok := preview.PrintBlockLines(lang, body, th, blockCols)
+		if !ok {
+			t.Fatalf("%s: not a view", lang)
+		}
+		out := ansi.Strip(strings.Join(lines, "\n"))
+		for _, c := range []string{"Add option", "add question", "Add value", "New page", "+ New", "Today"} {
+			if strings.Contains(out, c) {
+				t.Errorf("%s: printed %q:\n%s", lang, c, out)
+			}
+		}
+	}
+	// Empty views print nothing rather than editing hints.
+	for _, lang := range []string{"chart", "timeline", "form"} {
+		lines, _ := preview.PrintBlockLines(lang, nil, th, blockCols)
+		if out := ansi.Strip(strings.Join(lines, "\n")); strings.Contains(out, "(empty") || strings.Contains(out, "(add questions") {
+			t.Errorf("%s: printed an editing hint:\n%s", lang, out)
+		}
+	}
+}
+
+func TestSplitBlocks(t *testing.T) {
+	got := splitBlocks([]segment{{text: "a██▊"}, {text: "███"}})
+	var texts []string
+	for _, s := range got {
+		texts = append(texts, s.text)
+	}
+	if strings.Join(texts, "|") != "a|██|▊|███" {
+		t.Errorf("splitBlocks = %q", texts)
 	}
 }
