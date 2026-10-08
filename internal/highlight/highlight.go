@@ -26,6 +26,8 @@ func lexerFor(lang, code string) chroma.Lexer {
 		lang = "markdown"
 	case "calendar", "timeline", "gantt", "chart", "form":
 		lang = "yaml"
+	case "math", "katex":
+		lang = "latex"
 	}
 	if lang != "" {
 		l = lexers.Get(lang)

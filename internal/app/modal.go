@@ -64,6 +64,7 @@ var keymapSections = [][]keymapSection{
 			{":bd", "Close tab"},
 			{":enew", "New note"},
 			{":colo name", "Switch theme"},
+			{":export [file]", "Export note as PDF"},
 			{":addrow/:addcol", "Table row / column"},
 		}},
 		{"󰍽 MOUSE", [][2]string{

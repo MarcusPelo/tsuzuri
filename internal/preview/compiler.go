@@ -256,6 +256,33 @@ func CompileBlocks(input string, th theme.Theme, contentWidth int, baseDir strin
 			continue
 		}
 
+		// $$ … $$ equations, on one line or spread over several.
+		if strings.HasPrefix(trimmed, "$$") {
+			c.flushPara()
+			open := i
+			rest := strings.TrimSpace(trimmed[2:])
+			var body []string
+			if end := strings.Index(rest, "$$"); end >= 0 {
+				body = []string{rest[:end]}
+			} else {
+				if rest != "" {
+					body = append(body, rest)
+				}
+				for i++; i < len(lines); i++ {
+					t := strings.TrimSpace(lines[i])
+					if end := strings.Index(t, "$$"); end >= 0 {
+						body = append(body, t[:end])
+						break
+					}
+					body = append(body, lines[i])
+				}
+			}
+			c.openBlock(open, min(i+1, len(lines)))
+			c.fence, c.fenceEnd = c.lineOffset+open, c.lineOffset+i
+			c.codeBlock("math", body)
+			continue
+		}
+
 		// Tables: a header row followed by a separator row.
 		if strings.Contains(line, "|") && i+1 < len(lines) && tableSepRegex.MatchString(lines[i+1]) {
 			c.flushPara()

@@ -62,6 +62,8 @@ func parseVimCommand(cmdStr, content string) any {
 		return core.VimCloseBufferMsg{}
 	case "bd!", "bdelete!", "bw!":
 		return core.VimCloseBufferMsg{Force: true}
+	case "export", "pdf":
+		return core.ExportMsg{Path: arg}
 	case "colorscheme", "colo", "theme":
 		return core.ThemeMsg{Name: arg}
 	case "enew", "new", "e", "edit":

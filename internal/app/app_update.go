@@ -154,6 +154,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.handleQuit(msg)
 	case core.VimCloseBufferMsg:
 		return m, m.closeBuffer(m.active, msg.Force)
+	case core.ExportMsg:
+		return m, m.exportPDF(msg.Path)
 	case core.VimNewBufferMsg:
 		return m, m.newDraft(m.sidebar.ContextParentID())
 	case tea.MouseMsg:

@@ -51,7 +51,7 @@ type CalendarView struct {
 const calendarNav = "‹  Today  ›"
 
 // renderBlock draws the special fenced blocks (board, calendar, timeline,
-// chart, form, flow). ok is false for ordinary code.
+// chart, form, flow, math). ok is false for ordinary code.
 func renderBlock(lang string, body []string, th theme.Theme, width int, cal CalendarView) ([]string, []Hit, bool) {
 	var hs []Hit
 	var out []string
@@ -68,6 +68,8 @@ func renderBlock(lang string, body []string, th theme.Theme, width int, cal Cale
 		out = renderForm(body, th, width, &hs)
 	case "flow", "flowchart":
 		out = renderFlow(body, th, width, &hs)
+	case "math", "latex", "tex", "katex":
+		out = renderMath(body, th, width, &hs)
 	case "mermaid":
 		if !isMermaidFlow(body) {
 			return nil, nil, false

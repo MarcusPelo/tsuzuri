@@ -7,10 +7,12 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/jaisuriya-11/tsuzuri/internal/app"
 	"github.com/jaisuriya-11/tsuzuri/internal/config"
 	"github.com/jaisuriya-11/tsuzuri/internal/core"
+	"github.com/jaisuriya-11/tsuzuri/internal/export"
 	"github.com/jaisuriya-11/tsuzuri/internal/theme"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -21,6 +23,10 @@ import (
 var version = "dev"
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "export" {
+		os.Exit(runExport(os.Args[2:]))
+	}
+
 	var (
 		dir        string
 		themeName  string
@@ -130,4 +136,56 @@ func logFilePath() string {
 		return "tsuzuri.log"
 	}
 	return filepath.Join(dir, "tsuzuri.log")
+}
+
+// runExport handles "tsuzuri export note.md [-o out.pdf]".
+func runExport(args []string) int {
+	fs := flag.NewFlagSet("export", flag.ContinueOnError)
+	out := fs.String("o", "", "output file or folder (defaults to the note's name with .pdf, next to it)")
+	fs.Usage = func() {
+		fmt.Fprintln(fs.Output(), "Usage: tsuzuri export <note.md> [-o out.pdf]")
+		fs.PrintDefaults()
+	}
+	// Allow the flag after the note as well as before it.
+	var notes []string
+	for len(args) > 0 {
+		if err := fs.Parse(args); err != nil {
+			return 2
+		}
+		if fs.NArg() == 0 {
+			break
+		}
+		notes = append(notes, fs.Arg(0))
+		args = fs.Args()[1:]
+	}
+	if len(notes) != 1 {
+		fs.Usage()
+		return 2
+	}
+	note := notes[0]
+	data, err := os.ReadFile(note)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Could not read %s: %v\n", note, err)
+		return 1
+	}
+	dir := filepath.Dir(note)
+	name := strings.TrimSuffix(filepath.Base(note), filepath.Ext(note))
+	target := *out
+	if target != "" && !filepath.IsAbs(target) {
+		// -o is relative to where the command runs, not to the note.
+		if cwd, err := os.Getwd(); err == nil {
+			folder := strings.HasSuffix(target, "/") || strings.HasSuffix(target, string(filepath.Separator))
+			target = filepath.Join(cwd, target)
+			if folder {
+				target += string(filepath.Separator)
+			}
+		}
+	}
+	dest := export.Target(target, dir, name)
+	if err := export.WriteFile(string(data), export.Options{Title: name, BaseDir: dir}, dest); err != nil {
+		fmt.Fprintf(os.Stderr, "Export failed: %v\n", err)
+		return 1
+	}
+	fmt.Println(dest)
+	return 0
 }
