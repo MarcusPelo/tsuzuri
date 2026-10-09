@@ -1014,3 +1014,107 @@ func TestTableEditingFromPreview(t *testing.T) {
 		t.Fatalf("column should be deleted:\n%s", got)
 	}
 }
+
+func TestUndoRedoAcrossSaveAndTabs(t *testing.T) {
+	store := newTestStore(t)
+	for _, n := range []string{"alpha", "beta"} {
+		if _, err := store.SaveAs("", n, n+" body"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	h := newHarness(t, store)
+	h.keys("e")
+	h.key(tea.KeyEnter) // alpha
+	h.keys("A!")
+	h.key(tea.KeyEsc)
+	h.send(tea.KeyMsg{Type: tea.KeyCtrlS})
+	h.keys("A?")
+	h.key(tea.KeyEsc)
+
+	// Undo back to the saved text: the tab is clean again, so quitting
+	// doesn't ask; one more undo goes past the save.
+	h.keys("u")
+	if v := h.view(); !strings.Contains(v, "alpha body!") || strings.Contains(v, "alpha body!?") {
+		t.Fatalf("u should drop the unsaved edit:\n%s", v)
+	}
+	h.keys("u")
+	if v := h.view(); strings.Contains(v, "alpha body!") {
+		t.Fatalf("u should go past the save:\n%s", v)
+	}
+	h.send(tea.KeyMsg{Type: tea.KeyCtrlR})
+	h.send(tea.KeyMsg{Type: tea.KeyCtrlR})
+
+	// The history belongs to the tab and survives switching away.
+	h.send(tea.KeyMsg{Type: tea.KeyCtrlP})
+	h.keys("beta")
+	h.key(tea.KeyEnter)
+	h.keys("u")
+	if v := h.view(); !strings.Contains(v, "beta body") || !strings.Contains(v, "alpha.md") {
+		t.Fatalf("beta should open in its own tab with nothing to undo:\n%s", v)
+	}
+	h.keys("[")
+	h.keys("u")
+	h.send(tea.KeyMsg{Type: tea.KeyCtrlC})
+	if !h.quit {
+		t.Fatal("undoing to the saved text leaves nothing to save, so quit shouldn't ask")
+	}
+}
+
+func TestUndoRedoMarksTabDirty(t *testing.T) {
+	store := newTestStore(t)
+	if _, err := store.SaveAs("", "doc", "x"); err != nil {
+		t.Fatal(err)
+	}
+	h := newHarness(t, store)
+	h.keys("1")
+	h.key(tea.KeyEsc)
+	h.keys("A2")
+	h.key(tea.KeyEsc)
+	h.send(tea.KeyMsg{Type: tea.KeyCtrlS})
+	h.keys("u")
+	h.send(tea.KeyMsg{Type: tea.KeyCtrlC})
+	if h.quit {
+		t.Fatal("undo past the save leaves the tab dirty, so quitting must ask")
+	}
+	h.keys("s")
+	if got, _ := store.Get("doc.md"); got.Content != "x" {
+		t.Fatalf("expected the undone text on disk, got %q", got.Content)
+	}
+}
+
+func TestReusedTabStartsAFreshUndoHistory(t *testing.T) {
+	store := newTestStore(t)
+	for _, n := range []string{"alpha", "beta"} {
+		if _, err := store.SaveAs("", n, n+" body"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	h := newHarness(t, store)
+	h.keys("e")
+	h.key(tea.KeyEnter) // alpha
+	h.keys("A!")
+	h.key(tea.KeyEsc)
+	h.send(tea.KeyMsg{Type: tea.KeyCtrlS})
+	// alpha is clean, so the finder shows beta in the same tab.
+	h.send(tea.KeyMsg{Type: tea.KeyCtrlP})
+	h.keys("beta")
+	h.key(tea.KeyEnter)
+	h.keys("u")
+	if v := h.view(); !strings.Contains(v, "beta body") || strings.Contains(v, "alpha body") {
+		t.Fatalf("u must not bring back the previous file's text:\n%s", v)
+	}
+}
+
+func TestUndoBoardMoveFromPreview(t *testing.T) {
+	h := openWith(t, "```board\n## Todo\n- Write\n## Done\n- Ship\n```")
+	h.clickText("Write")
+	h.keys("2") // Move to → Done
+	if got := h.text(); !strings.Contains(got, "## Done\n- Ship\n- Write") {
+		t.Fatalf("card should move to Done:\n%s", got)
+	}
+	h.key(tea.KeyEsc) // back to the editor
+	h.keys("u")
+	if got := h.text(); !strings.Contains(got, "## Todo\n- Write\n## Done\n- Ship\n```") {
+		t.Fatalf("u should undo the move made in the preview:\n%s", got)
+	}
+}

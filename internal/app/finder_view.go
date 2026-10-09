@@ -168,6 +168,7 @@ func (m *Model) openInCurrentBuffer(id string) tea.Cmd {
 		return nil
 	}
 	cur.id, cur.title, cur.saved, cur.text, cur.dir = p.ID, p.Title, p.Content, p.Content, ""
+	cur.hist = nil // the old file's undo steps don't apply to the new one
 	m.active = ""
 	m.showBuffer(cur)
 	m.refreshModified()

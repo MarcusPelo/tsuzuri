@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/jaisuriya-11/tsuzuri/internal/content"
 	"github.com/jaisuriya-11/tsuzuri/internal/core"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -25,6 +26,15 @@ type buffer struct {
 	saved string // content as last written to disk ("" for drafts)
 	text  string // latest text; for the active tab, the editor is the truth
 	dir   string // drafts: default folder offered by Save As
+	hist  *content.History
+}
+
+// history returns the tab's undo history, kept across tab switches and saves.
+func (b *buffer) history() *content.History {
+	if b.hist == nil {
+		b.hist = content.NewHistory()
+	}
+	return b.hist
 }
 
 func (b *buffer) draft() bool { return isDraftID(b.id) }
@@ -114,7 +124,7 @@ func (m *Model) refreshModified() {
 func (m *Model) showBuffer(b *buffer) {
 	m.stashActive()
 	m.active = b.id
-	m.content.SetBuffer(b.page(), b.draft())
+	m.content.SetBuffer(b.page(), b.draft(), b.history())
 	m.preview.SetBaseDir(m.noteDir(b))
 	m.preview.SetPage(b.page())
 	m.sidebar.SetActiveID(b.id)
@@ -127,7 +137,7 @@ func (m *Model) showBuffer(b *buffer) {
 // clearEditor shows the empty state when no tabs are left.
 func (m *Model) clearEditor() {
 	m.active = ""
-	m.content.SetBuffer(core.Page{}, false)
+	m.content.SetBuffer(core.Page{}, false, nil)
 	m.preview.SetPage(core.Page{})
 	m.sidebar.SetActiveID("")
 }
@@ -278,7 +288,7 @@ func (m *Model) saveBufferAs(b *buffer, dir, name string) error {
 	}
 	m.reloadTree()
 	if wasActive {
-		m.content.SetBuffer(b.page(), false)
+		m.content.SetBuffer(b.page(), false, b.history())
 		m.preview.SetBaseDir(m.noteDir(b))
 		m.preview.SetPage(b.page())
 		m.sidebar.SetActiveID(b.id)

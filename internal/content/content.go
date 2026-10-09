@@ -27,6 +27,7 @@ type Model struct {
 	pending  string // first key of a two-key Vim command ("g", "d")
 	slash    *slashMenu
 	hl       *hlCache // shared across copies so View can memoise
+	hist     *History // the buffer's undo/redo, owned by the app's tab
 	dragging bool
 	dragRow  int
 	dragCol  int
@@ -53,6 +54,7 @@ func New(th theme.Theme) Model {
 		cmdInput: createCommandInput(th),
 		mode:     ModeNormal,
 		hl:       &hlCache{},
+		hist:     NewHistory(),
 	}
 }
 
@@ -85,11 +87,20 @@ func (m *Model) SetSize(w, h int) {
 // SetPage loads a document into the editor. draft marks an unsaved buffer
 // that has no file yet.
 func (m *Model) SetPage(p core.Page) {
-	m.SetBuffer(p, false)
+	m.SetBuffer(p, false, nil)
 }
 
-// SetBuffer loads a buffer's text, resetting the cursor to the top.
-func (m *Model) SetBuffer(p core.Page, draft bool) {
+// SetBuffer loads a buffer's text, resetting the cursor to the top. h is
+// the buffer's undo history (nil starts a fresh one).
+func (m *Model) SetBuffer(p core.Page, draft bool, h *History) {
+	m.hist.endInsert(m.textarea.Value())
+	if h == nil {
+		h = NewHistory()
+	}
+	m.hist = h
+	if m.mode == ModeInsert {
+		h.beginInsert(snapshot{text: p.Content})
+	}
 	m.page = p
 	m.draft = draft
 	m.pending = ""
@@ -102,6 +113,7 @@ func (m *Model) SetBuffer(p core.Page, draft bool) {
 func (m *Model) SetFocused(focused bool) {
 	m.focused = focused
 	if !focused {
+		m.hist.endInsert(m.textarea.Value())
 		m.slash = nil
 		m.Blur()
 		if m.mode == ModeCommand {
@@ -173,6 +185,7 @@ func (m Model) CommandView(width int) string {
 
 // EnterInsert switches to INSERT mode (used by the app, e.g. for a new buffer).
 func (m *Model) EnterInsert() tea.Cmd {
+	m.hist.beginInsert(m.snapshot())
 	m.mode = ModeInsert
 	if !m.focused {
 		return nil
@@ -185,6 +198,7 @@ func (m *Model) ExitInsert() {
 	if m.mode == ModeInsert {
 		m.mode = ModeNormal
 	}
+	m.hist.endInsert(m.textarea.Value())
 	m.slash = nil
 }
 
@@ -231,9 +245,11 @@ func (c *hlCache) colors(text string, th theme.Theme) highlight.Colors {
 // ReplaceText swaps the whole buffer text, keeping the cursor where it was
 // (clamped). Used when the preview edits the note.
 func (m *Model) ReplaceText(text string) {
-	row, col := m.textarea.RowCol()
-	m.textarea.SetValue(text)
-	m.textarea.SetRowCol(row, col)
+	m.track(func() {
+		row, col := m.textarea.RowCol()
+		m.textarea.SetValue(text)
+		m.textarea.SetRowCol(row, col)
+	})
 }
 
 // GotoLine puts the cursor on 1-based line n, scrolled into view.

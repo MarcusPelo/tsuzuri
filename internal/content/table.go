@@ -261,7 +261,12 @@ func (m *Model) nextCell(forward bool) bool {
 
 // TableOpAt runs a table operation ("addrow", "addcol", "delrow", "delcol",
 // "format") as if the cursor were in cell idx of document line row.
-func (m *Model) TableOpAt(row, idx int, op string) bool {
+func (m *Model) TableOpAt(row, idx int, op string) (ok bool) {
+	m.track(func() { ok = m.tableOpAt(row, idx, op) })
+	return ok
+}
+
+func (m *Model) tableOpAt(row, idx int, op string) bool {
 	lines := strings.Split(m.textarea.Value(), "\n")
 	if row < 0 || row >= len(lines) {
 		return false
@@ -272,7 +277,12 @@ func (m *Model) TableOpAt(row, idx int, op string) bool {
 
 // SetTableCell replaces the text of cell idx on document line row and
 // re-aligns the table.
-func (m *Model) SetTableCell(row, idx int, text string) bool {
+func (m *Model) SetTableCell(row, idx int, text string) (ok bool) {
+	m.track(func() { ok = m.setTableCell(row, idx, text) })
+	return ok
+}
+
+func (m *Model) setTableCell(row, idx int, text string) bool {
 	lines := strings.Split(m.textarea.Value(), "\n")
 	if row < 0 || row >= len(lines) || !isTableLine(lines[row]) {
 		return false
@@ -284,5 +294,5 @@ func (m *Model) SetTableCell(row, idx int, text string) bool {
 	cells[idx] = strings.ReplaceAll(strings.TrimSpace(text), "|", "\\|")
 	lines[row] = "| " + strings.Join(cells, " | ") + " |"
 	m.textarea.SetValue(strings.Join(lines, "\n"))
-	return m.TableOpAt(row, idx, "format")
+	return m.tableOpAt(row, idx, "format")
 }

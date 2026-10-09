@@ -18,7 +18,32 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	if m.page.ID == "" {
 		return m, nil
 	}
+	before, wasInsert := m.snapshot(), m.mode == ModeInsert
+	m, cmd := m.update(msg)
+	m.recordUndo(before, wasInsert)
+	return m, cmd
+}
 
+// recordUndo turns what one key did into undo history: a whole INSERT
+// session (including the o/O that opened it) is one step, and any other
+// change to the text is a step of its own.
+func (m *Model) recordUndo(before snapshot, wasInsert bool) {
+	isInsert := m.mode == ModeInsert
+	if m.hist.moved {
+		m.hist.moved = false
+		return
+	}
+	switch {
+	case !wasInsert && isInsert:
+		m.hist.beginInsert(before)
+	case wasInsert && !isInsert:
+		m.hist.endInsert(m.textarea.Value())
+	case !isInsert && m.textarea.Value() != before.text:
+		m.hist.push(before)
+	}
+}
+
+func (m Model) update(msg tea.Msg) (Model, tea.Cmd) {
 	if k, ok := msg.(tea.KeyMsg); ok && m.textarea.HasSelection() &&
 		m.mode != ModeVisual && m.mode != ModeVisualLine {
 		m.textarea.ClearSelection() // a key press drops a mouse selection
@@ -178,6 +203,10 @@ func (m Model) handleNormalKey(k tea.KeyMsg) (Model, tea.Cmd) {
 		ta.StartSelection()
 	case "p":
 		return m, m.paste()
+	case "u":
+		return m, m.undo()
+	case "ctrl+r":
+		return m, m.redo()
 	case "ctrl+d":
 		ta.ScrollBy(m.halfPage())
 		ta.MoveCursorBy(m.halfPage())
