@@ -53,6 +53,7 @@ var keymapSections = [][]keymapSection{
 			{"Ctrl+D/U", "Half page down / up"},
 			{"x / dd", "Delete char / line"},
 			{"yy / p", "Copy line / paste"},
+			{"u / Ctrl+R", "Undo / redo"},
 			{"v / V", "Select, then y copy, d cut"},
 			{"/ (insert)", "Block menu: headings, lists…"},
 		}},

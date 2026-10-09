@@ -338,3 +338,119 @@ func TestTableEditing(t *testing.T) {
 		t.Fatal("table actions should only show inside a table")
 	}
 }
+
+func TestUndoRedo(t *testing.T) {
+	c := content.New(theme.DefaultTheme())
+	c.SetSize(80, 20)
+	c.SetPage(core.Page{ID: "a.md", Content: "one\ntwo\nthree"})
+	ctrlR := tea.KeyMsg{Type: tea.KeyCtrlR}
+	esc := tea.KeyMsg{Type: tea.KeyEsc}
+
+	c = keys(c, "jllx")
+	if c.Value() != "one\ntw\nthree" {
+		t.Fatalf("x: got %q", c.Value())
+	}
+	c = keys(c, "ggu")
+	if c.Value() != "one\ntwo\nthree" {
+		t.Fatalf("u after x: got %q", c.Value())
+	}
+	if line, col := c.CursorPosition(); line != 2 || col != 3 {
+		t.Fatalf("u should put the cursor back on the change, got %d:%d", line, col)
+	}
+	c, _ = c.Update(ctrlR)
+	if c.Value() != "one\ntw\nthree" {
+		t.Fatalf("Ctrl+R: got %q", c.Value())
+	}
+
+	// A whole INSERT session, including the o that opened it, is one step.
+	c = keys(c, "oab")
+	c, _ = c.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	c = keys(c, "cd")
+	c, _ = c.Update(esc)
+	if c.Value() != "one\ntw\nab\ncd\nthree" {
+		t.Fatalf("o session: got %q", c.Value())
+	}
+	c = keys(c, "u")
+	if c.Value() != "one\ntw\nthree" {
+		t.Fatalf("u after insert session: got %q", c.Value())
+	}
+
+	// A new change drops the redo stack.
+	c = keys(c, "Gdd")
+	var cmd tea.Cmd
+	c, cmd = c.Update(ctrlR)
+	if c.Value() != "one\ntw" {
+		t.Fatalf("redo after a new change must do nothing, got %q", c.Value())
+	}
+	if msg, ok := cmd().(core.StatusMsg); !ok || !strings.Contains(msg.Text, "newest") {
+		t.Fatalf("expected an 'Already at newest change' status, got %#v", cmd())
+	}
+
+	c = keys(c, "uuu")
+	if c.Value() != "one\ntwo\nthree" {
+		t.Fatalf("undo to the start: got %q", c.Value())
+	}
+	c, cmd = c.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'u'}})
+	if msg, ok := cmd().(core.StatusMsg); !ok || !strings.Contains(msg.Text, "oldest") || msg.Error {
+		t.Fatalf("expected an 'Already at oldest change' status, got %#v", cmd())
+	}
+}
+
+func TestUndoVisualDeleteAndAppEdits(t *testing.T) {
+	c := content.New(theme.DefaultTheme())
+	c.SetSize(80, 20)
+	c.SetPage(core.Page{ID: "a.md", Content: "one\ntwo"})
+
+	c = keys(c, "Vd")
+	if c.Value() != "two" {
+		t.Fatalf("V d: got %q", c.Value())
+	}
+	c.ReplaceText("changed")
+	c.InsertText("!")
+	c = keys(c, "u")
+	if c.Value() != "changed" {
+		t.Fatalf("u after InsertText: got %q", c.Value())
+	}
+	c = keys(c, "u")
+	if c.Value() != "two" {
+		t.Fatalf("u after ReplaceText: got %q", c.Value())
+	}
+	c = keys(c, "u")
+	if c.Value() != "one\ntwo" {
+		t.Fatalf("u after V d: got %q", c.Value())
+	}
+}
+
+func TestUndoHistoryIsCapped(t *testing.T) {
+	c := content.New(theme.DefaultTheme())
+	c.SetSize(80, 20)
+	c.SetPage(core.Page{ID: "a.md", Content: strings.Repeat("x", 250)})
+	c = keys(c, strings.Repeat("x", 250))
+	if c.Value() != "" {
+		t.Fatalf("expected an empty line, got %q", c.Value())
+	}
+	c = keys(c, strings.Repeat("u", 250))
+	if got := len(c.Value()); got != 200 {
+		t.Fatalf("expected 200 undo steps, got back %d characters", got)
+	}
+}
+
+func TestUndoHistoryFollowsTheBuffer(t *testing.T) {
+	c := content.New(theme.DefaultTheme())
+	c.SetSize(80, 20)
+	ha, hb := content.NewHistory(), content.NewHistory()
+	a := core.Page{ID: "a.md", Content: "alpha"}
+	c.SetBuffer(a, false, ha)
+	c = keys(c, "x")
+	a.Content = c.Value()
+	c.SetBuffer(core.Page{ID: "b.md", Content: "beta"}, false, hb)
+	c = keys(c, "u")
+	if c.Value() != "beta" {
+		t.Fatalf("b has no history yet, got %q", c.Value())
+	}
+	c.SetBuffer(a, false, ha)
+	c = keys(c, "u")
+	if c.Value() != "alpha" {
+		t.Fatalf("a's history should survive the switch, got %q", c.Value())
+	}
+}

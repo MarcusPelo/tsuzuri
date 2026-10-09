@@ -211,6 +211,10 @@ func (m *Model) applySlash(it slashItem) tea.Cmd {
 // SetFrontMatter sets key: value in the note's leading "---" block,
 // creating the block if needed, and keeps the cursor on the same text.
 func (m *Model) SetFrontMatter(key, value string) {
+	m.track(func() { m.setFrontMatter(key, value) })
+}
+
+func (m *Model) setFrontMatter(key, value string) {
 	text := m.textarea.Value()
 	row, col := m.textarea.RowCol()
 	lines := strings.Split(text, "\n")
@@ -246,6 +250,8 @@ func (m *Model) SetFrontMatter(key, value string) {
 
 // InsertText types text at the cursor (used for "Link to page").
 func (m *Model) InsertText(s string) {
-	m.textarea.InsertString(s)
-	m.textarea.EnsureVisible()
+	m.track(func() {
+		m.textarea.InsertString(s)
+		m.textarea.EnsureVisible()
+	})
 }
